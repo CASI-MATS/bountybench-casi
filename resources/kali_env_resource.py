@@ -393,6 +393,7 @@ class KaliEnvResource(RunnableBaseResource):
                 detach=True,
                 name=name,
                 command=["tail", "-f", "/dev/null"],
+                user=f"{os.getuid()}:{os.getgid()}",
             )
             self.util.safe_execute(
                 lambda: self.util.print_docker_log(container), "printing docker log"

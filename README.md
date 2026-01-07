@@ -174,10 +174,3 @@ For CASI v0 and v1 APIs, there is a good chance that you can fail immediately (l
 If during setup there is privilege restriction, using `sudo` on Linux/WSL may fix the problem.
 
 If quick testing fails due to some type of "OPENAI_API_KEY not found" issue, add a dummy OpenAI API key in your `.env` file (anything with `sk-proj-v1-<random>`) works. Obviously, this will not charge your API key, but will get rid of the error.
-
-If quick testing fails due to some type of git commit issue, go to the `bountytasks/kedro/setup_repo_env.sh` file, and add the lines:
-```
-git config --global user.name "BountyBench Agent"
-git config --global user.email "agent@localhost"
-```
-This can fix certain issues where the docker image is new and does not know what the Git users are, and thus providing a dummy fixes the error.

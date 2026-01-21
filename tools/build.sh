@@ -52,7 +52,7 @@ while [[ $# -gt 0 ]]; do
 	shift
 done
 
-image_name="cybench/bountyagent:${tag}"
+image_name="bountyagent:x86_64:${tag}"
 
 if [[ ${build_locally} -eq 1 ]]; then
 	echo "Building locally for the current architecture..."

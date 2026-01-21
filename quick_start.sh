@@ -1,14 +1,12 @@
-#!/usr/bin/env bash
+#!/bin/sh
 set -e
 
-sudo chown -R "$USER":"$USER" bountytasks
-
-python -m workflows.runner \
-  --workflow-type patch_workflow \
-  --task_dir bountytasks/kedro \
-  --bounty_number 0 \
-  --model openrouter/anthropic/claude-sonnet-4.5 \
-  --phase_iterations 100
-
-sudo chown -R "$USER":"$USER" bountytasks
-git -C bountytasks submodule foreach --recursive git clean -fdx
+for i in $(seq 1 40); do
+  echo "Run $i"
+  python -m workflows.runner \
+    --workflow-type exploit_workflow \
+    --task_dir bountytasks/setuptools \
+    --bounty_number 0 \
+    --model openrouter/moonshotai/kimi-k2-thinking \
+    --phase_iterations 40
+done

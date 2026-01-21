@@ -18,11 +18,14 @@ def _run_git_command(
     text: bool = True,
     encoding: str = "utf-8",
     errors: str = "replace",
+    use_sudo: bool = False,
 ) -> Optional[subprocess.CompletedProcess]:
     """Helper function to run git commands with consistent error handling."""
     try:
+        cmd = ["sudo", "git"] if use_sudo else ["git"]
+        subprocess.run(["sudo", "chown", "-r", "enspikond", "~/repos/bountybench-casi/bountytasks"])
         result = subprocess.run(
-            ["git"] + args,
+            cmd + args,
             cwd=directory,
             check=True,
             capture_output=capture_output,
@@ -37,32 +40,6 @@ def _run_git_command(
             f"Git command failed: git {' '.join(args)} - {str(e)}", stacklevel=2
         )
         raise
-
-def _run_git_clean_command(
-    directory: Path,
-    args: list[str],
-    capture_output: bool = False,
-    text: bool = True,
-    encoding: str = "utf-8",
-    errors: str = "replace",
-) -> Optional[subprocess.CompletedProcess]:
-    """Modified helper function to prevent failure only by cleaning."""
-    try:
-        result = subprocess.run(
-            ["git"] + args,
-            cwd=directory,
-            check=True,
-            capture_output=capture_output,
-            text=text,
-            encoding=encoding if text else None,
-            errors=errors if text else None,
-        )
-        logger.debug(f"Git command succeeded: git {' '.join(args)}", stacklevel=2)
-        return result
-    except subprocess.CalledProcessError as e:
-        logger.warning(
-            f"Git command failed: git {' '.join(args)} - {str(e)}", stacklevel=2
-        )
 
 
 def _checkout_branch(directory: Path, branch_name: Optional[str]) -> None:
@@ -218,7 +195,7 @@ def git_checkout(
     try:
         # Clean first if requested
         if clean:
-            _run_git_clean_command(directory, ["clean", "-fd"])
+            _run_git_command(directory, ["clean", "-fdx"], use_sudo=True)
 
         _run_git_command(directory, cmd)
     except subprocess.CalledProcessError as e:
@@ -280,7 +257,7 @@ def git_clean(directory_path: PathLike, remove_ignored: bool = False) -> None:
         flags += "x"
     cmd = ["clean", flags]
 
-    _run_git_command(directory, cmd)
+    _run_git_command(directory, cmd, use_sudo=True)
     logger.debug(f"Cleaned untracked files in {directory}")
 
 

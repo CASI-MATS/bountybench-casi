@@ -1,20 +1,45 @@
 import json
 import os
 import statistics
+from dataclasses import dataclass, asdict
+from collections import defaultdict
+from typing import List
 
+# =====================
 # Configuration
+# =====================
 INPUT_DIR = "./analysis_in"
 OUTPUT_DIR = "./analysis_out"
+SUMMARY_FILE = "summary.json"
 
+# =====================
+# Dataclasses
+# =====================
+@dataclass
+class RunRecord:
+    bountytask: str
+    workflow_type: str
+    model_name: str
+
+    complete: bool
+    success: bool
+
+    total_credits_used: float
+    total_time_ms: float
+    llm_calls: int
+
+    avg_credits_per_llm_call: float
+    avg_time_ms_per_llm_call: float
+
+
+# =====================
+# Helpers
+# =====================
 def ensure_dirs():
-    if not os.path.exists(INPUT_DIR):
-        os.makedirs(INPUT_DIR)
-        print(f"Created input directory: {INPUT_DIR}. Please place JSON logs there.")
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def get_safe(data, path, default="N/A"):
-    """Helper to safely get nested dictionary values."""
+def get_safe(data, path, default=None):
     try:
         for key in path:
             data = data[key]
@@ -23,158 +48,167 @@ def get_safe(data, path, default="N/A"):
         return default
 
 def calculate_stats(phase_messages):
-    """Iterates through messages to calculate token and latency statistics."""
     stats = {
         "llm_calls": 0,
-        "input_tokens": [],
-        "output_tokens": [],
-        "latency_ms": []
+        "credits": [],
+        "latency_ms": [],
     }
 
-    for phase in phase_messages:
-        for agent_msg in phase.get("agent_messages", []):
-            if not agent_msg.get("action_messages"):
-                continue
-            
-            for action in agent_msg["action_messages"]:
-                # specific to the model generation step
-                if action.get("resource_id") == "model" and "additional_metadata" in action:
-                    meta = action["additional_metadata"]
+    for phase in phase_messages or []:
+        for agent_msg in phase.get("agent_messages") or []:
+            for action in agent_msg.get("action_messages") or []:
+                if action.get("resource_id") == "model":
+                    meta = action.get("additional_metadata") or {}
                     stats["llm_calls"] += 1
-                    stats["input_tokens"].append(meta.get("input_tokens", 0))
-                    stats["output_tokens"].append(meta.get("output_tokens", 0))
-                    stats["latency_ms"].append(meta.get("time_taken_in_ms", 0))
+                    stats["credits"].append(
+                        meta.get("credits_used", 0)
+                        or meta.get("input_tokens", 0) + meta.get("output_tokens", 0)
+                    )
+                    stats["latency_ms"].append(
+                        meta.get("time_taken_in_ms", 0)
+                    )
 
     return stats
 
-def write_header(f, title):
-    f.write(f"\n{'='*60}\n")
-    f.write(f" {title.upper()}\n")
-    f.write(f"{'='*60}\n")
+def extract_bounty_name(task_dir: str) -> str:
+    if not task_dir:
+        return "unknown"
 
-def process_log_file(filename):
-    input_path = os.path.join(INPUT_DIR, filename)
-    output_path = os.path.join(OUTPUT_DIR, filename.replace(".json", ".txt"))
+    parts = task_dir.replace("\\", "/").split("/")
+
+    if "bountytasks" in parts:
+        idx = parts.index("bountytasks")
+        if idx + 1 < len(parts):
+            return parts[idx + 1]
+
+    # fallback: last directory
+    return parts[-1]
+
+
+# =====================
+# Per-log processing
+# =====================
+def parse_log(filename) -> RunRecord | None:
+    path = os.path.join(INPUT_DIR, filename)
 
     try:
-        with open(input_path, 'r', encoding='utf-8') as json_file:
-            data = json.load(json_file)
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
     except Exception as e:
-        print(f"Error reading {filename}: {e}")
-        return
+        print(f"Failed to read {filename}: {e}")
+        return None
 
-    with open(output_path, 'w', encoding='utf-8') as f:
-        # 1. Workflow Metadata
-        write_header(f, "Workflow Metadata")
-        wf_meta = data.get("workflow_metadata", {})
-        task = wf_meta.get("task", {})
-        summary = wf_meta.get("workflow_summary", {})
-        
-        f.write(f"Workflow Name:   {wf_meta.get('workflow_name', 'N/A')}\n")
-        f.write(f"Task Directory:  {task.get('task_dir', 'N/A')}\n")
-        f.write(f"Bounty Number:   {task.get('bounty_number', 'N/A')}\n")
-        f.write(f"Status:          {'COMPLETE' if summary.get('complete') else 'INCOMPLETE'}\n")
-        f.write(f"Success:         {'YES' if summary.get('success') else 'NO'}\n")
-        
-        # Bounty Specifics
-        bounty_meta = get_safe(data, ["additional_metadata", "bounty_metadata"], {})
-        if bounty_meta != "N/A":
-            f.write(f"-" * 30 + "\n")
-            f.write(f"CVE:             {bounty_meta.get('CVE', 'N/A')}\n")
-            f.write(f"Payout:          ${bounty_meta.get('disclosure_bounty', '0')}\n")
+    wf_meta = data.get("workflow_metadata", {})
+    summary = wf_meta.get("workflow_summary", {})
+    task = wf_meta.get("task", {})
 
-        # 2. Resources & Statistics
-        write_header(f, "Model & Resource Statistics")
-        
-        # Model Config
-        model_config = get_safe(data, ["resources_used", "model", "config"], {})
-        f.write(f"Model Name:          {model_config.get('model', 'Unknown')}\n")
-        f.write(f"Temperature:         {model_config.get('temperature', 'N/A')}\n")
-        f.write(f"Max Input Tokens:    {model_config.get('max_input_tokens', 'N/A')}\n")
-        f.write(f"Max Output Tokens:   {model_config.get('max_output_tokens', 'N/A')}\n")
-        
-        # Usage Stats
-        stats = calculate_stats(data.get("phase_messages", []))
-        
-        if stats["llm_calls"] > 0:
-            avg_in = statistics.mean(stats["input_tokens"])
-            avg_out = statistics.mean(stats["output_tokens"])
-            
-            total_lat = sum(stats["latency_ms"])
-            avg_lat = statistics.mean(stats["latency_ms"])
-            
-            f.write(f"\nTotal LLM Calls:     {stats['llm_calls']}\n")
-            f.write(f"Total Tokens:        In: {sum(stats['input_tokens']):,} | Out: {sum(stats['output_tokens']):,}\n")
-            f.write(f"Avg Tokens:          In: {avg_in:.2f} | Out: {avg_out:.2f}\n")
-            f.write(f"Latency (ms):        Total: {total_lat:,.2f} | Avg: {avg_lat:,.2f}\n")
-        else:
-            f.write("\nNo LLM calls detected in phase messages.\n")
+    bountytask = extract_bounty_name(task.get("task_dir"))
+    workflow_type = wf_meta.get("workflow_name", "unknown").replace("Workflow", "").lower()
+    model_name = get_safe(data, ["resources_used", "model", "config", "model"], "unknown")
 
-        # 3. Play-by-Play
-        write_header(f, "Conversation Play-by-Play")
-        
-        phases = data.get("phase_messages", [])
-        for p_idx, phase in enumerate(phases):
-            f.write(f"\n### PHASE {p_idx}: {phase.get('phase_id', 'Unknown')}\n")
-            
-            agent_msgs = phase.get("agent_messages", [])
-            for msg in agent_msgs:
-                agent_id = msg.get("agent_id")
-                
-                # Handle System/User prompts (NO TRUNCATION)
-                if agent_id == "system" or agent_id == "user":
-                    f.write(f"\n[{agent_id.upper()} MESSAGE]\n")
-                    f.write(f"{msg.get('message', '').strip()}\n")
-                    continue
+    complete = bool(summary.get("complete", False))
+    success = bool(summary.get("success", False))
 
-                # Handle Executor/Model interactions
-                action_msgs = msg.get("action_messages", [])
-                if not action_msgs:
-                    continue
+    stats = calculate_stats(data.get("phase_messages", []))
 
-                for action in action_msgs:
-                    res_id = action.get("resource_id", "")
-                    
-                    # Case A: The Model Thinking and Commanding
-                    if res_id == "model":
-                        f.write(f"\n{'-'*20} MODEL THOUGHT & COMMAND {'-'*20}\n")
-                        raw_msg = action.get("message", "")
-                        cmd = action.get("command", "")
-                        
-                        if "Thought:" in raw_msg:
-                            f.write(raw_msg.strip() + "\n")
-                        else:
-                            f.write(f"Content: {raw_msg}\n")
-                            
-                        if cmd:
-                            f.write(f"\n>>> COMMAND: {cmd}\n")
+    llm_calls = stats["llm_calls"]
+    total_credits = sum(stats["credits"])
+    total_time = sum(stats["latency_ms"])
 
-                    # Case B: The Tool/Environment Responding
-                    elif "kali" in res_id or "env" in res_id:
-                        f.write(f"\n{'.'*20} SYSTEM OBSERVATION {'.'*20}\n")
-                        output = action.get("message", "").strip()
-                        if not output:
-                            output = "[No Output]"
-                        f.write(f"{output}\n")
-                    
-                    # Case C: Submit Agent
-                    elif agent_id == "detect_agent":
-                        f.write(f"\n!!! DETECT AGENT: {action.get('message')}\n")
+    avg_credits = total_credits / llm_calls if llm_calls else 0.0
+    avg_time = total_time / llm_calls if llm_calls else 0.0
 
-    print(f"Processed: {filename} -> {output_path}")
+    return RunRecord(
+        bountytask=bountytask,
+        workflow_type=workflow_type,
+        model_name=model_name,
+        complete=complete,
+        success=success,
+        total_credits_used=total_credits,
+        total_time_ms=total_time,
+        llm_calls=llm_calls,
+        avg_credits_per_llm_call=avg_credits,
+        avg_time_ms_per_llm_call=avg_time,
+    )
 
+
+
+# =====================
+# Aggregation
+# =====================
+def aggregate_runs(runs: List[RunRecord]) -> List[dict]:
+    grouped = defaultdict(list)
+
+    for r in runs:
+        key = (r.bountytask, r.workflow_type, r.model_name)
+        grouped[key].append(r)
+
+    rows = []
+
+    for (bountytask, workflow_type, model_name), items in grouped.items():
+        runs_count = len(items)
+
+        completes = sum(r.complete for r in items)
+        successes = sum(r.success for r in items)
+
+        total_credits = sum(r.total_credits_used for r in items)
+        total_llm_calls = sum(r.llm_calls for r in items)
+        total_time = sum(r.total_time_ms for r in items)
+
+        rows.append({
+            "bountytask": bountytask,
+            "workflow_type": workflow_type,
+            "model_name": model_name,
+
+            "total_runs": runs_count,
+            "completes": completes,
+            "successes": successes,
+
+            "total_credits_used": total_credits,
+            "avg_credits_per_run": total_credits / runs_count if runs_count else 0,
+            "avg_credits_per_llm_call": (
+                total_credits / total_llm_calls if total_llm_calls else 0
+            ),
+
+            "total_llm_calls": total_llm_calls,
+            "avg_llm_calls_per_run": total_llm_calls / runs_count if runs_count else 0,
+
+            "total_time_ms": total_time,
+            "avg_time_per_run_ms": total_time / runs_count if runs_count else 0,
+            "avg_time_per_llm_call_ms": (
+                total_time / total_llm_calls if total_llm_calls else 0
+            ),
+        })
+
+    return rows
+
+
+# =====================
+# Main
+# =====================
 def main():
     ensure_dirs()
-    files = [f for f in os.listdir(INPUT_DIR) if f.endswith(".json")]
-    
-    if not files:
-        print(f"No JSON files found in {INPUT_DIR}")
+
+    runs: List[RunRecord] = []
+
+    for fname in os.listdir(INPUT_DIR):
+        if fname.endswith(".json"):
+            record = parse_log(fname)
+            if record:
+                runs.append(record)
+
+    if not runs:
+        print("No valid logs found.")
         return
 
-    print(f"Found {len(files)} log files. Processing...")
-    for filename in files:
-        process_log_file(filename)
-    print("Done.")
+    summary = aggregate_runs(runs)
+
+    out_path = os.path.join(OUTPUT_DIR, SUMMARY_FILE)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+
+    print(f"Wrote summary → {out_path}")
+
 
 if __name__ == "__main__":
     main()

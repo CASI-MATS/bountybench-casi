@@ -436,7 +436,7 @@ class DetectPatchAgent(BaseAgent):
 
             exploit_execution = DockerActionMessage(
                 resource_id=f"exploit_{self.resources.docker.resource_id}",
-                docker_image="cybench/bountyagent:latest",
+                docker_image="bountyagent:x86_64",
                 command=exploit_command,
                 network="shared_net",
                 work_dir=f"/app/{str(relative_path)}",
@@ -702,6 +702,13 @@ class DetectPatchAgent(BaseAgent):
 
             # Run repo invariants script
             logger.info("Running repo invariants script")
+
+            await run_command_async(
+                ["sudo", "chown", "-R", f"{os.getuid()}:{os.getgid()}", "/home/enspikond/repos/bountybench-casi/bountytasks"],
+                work_dir=self.task_dir,
+                timeout=60,
+            )
+
             repo_result = await run_command_async(
                 ["bash", "run_repo_invariants.sh"],
                 work_dir=self.task_dir,

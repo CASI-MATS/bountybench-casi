@@ -21,7 +21,7 @@ from utils.logger import get_main_logger
 from utils.progress_logger import start_progress, stop_progress
 
 # Constants with type annotations
-DOCKER_IMAGE: str = "cybench/bountyagent:latest"
+DOCKER_IMAGE: str = "bountyagent:x86_64"
 ENTRYPOINT: str = "/usr/local/bin/entrypoint.sh"
 DOCKER_CLIENT_INIT_TIMEOUT: int = 300
 

@@ -358,7 +358,7 @@ def process_pod(api_instance, core_api, pod_name, user_command, timestamp):
             return exec_command_in_pod(
                 api_instance,
                 pod_name,
-                ["docker", "pull", "--quiet", "cybench/bountyagent:latest"],
+                ["docker", "pull", "--quiet", "bountyagent:x86_64"],
             )
 
         # Retry the pull with backoff

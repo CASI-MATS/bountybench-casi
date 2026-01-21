@@ -156,7 +156,7 @@ dmypy.json
 cython_debug/
 
 # log files
-logs
+data_analysis/analysis_in/
 error_logs
 log_scores
 

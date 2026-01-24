@@ -1,14 +1,15 @@
 import json
 import os
-import statistics
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from collections import defaultdict
 from typing import List
+from scipy import stats
+import numpy as np
 
 # =====================
 # Configuration
 # =====================
-INPUT_DIR = "./analysis_in"
+INPUT_DIR = "../logs"
 OUTPUT_DIR = "./analysis_out"
 SUMMARY_FILE = "summary.json"
 
@@ -36,7 +37,6 @@ class RunRecord:
 # Helpers
 # =====================
 def ensure_dirs():
-    os.makedirs(INPUT_DIR, exist_ok=True)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def get_safe(data, path, default=None):
@@ -131,7 +131,9 @@ def parse_log(filename) -> RunRecord | None:
         avg_time_ms_per_llm_call=avg_time,
     )
 
-
+def clopper_pearson_ci(k, n, confidence=0.95):
+    ci_low, ci_high = stats.binom.interval(confidence, n, k/n)
+    return ci_low/n, ci_high/n
 
 # =====================
 # Aggregation
@@ -154,6 +156,8 @@ def aggregate_runs(runs: List[RunRecord]) -> List[dict]:
         total_credits = sum(r.total_credits_used for r in items)
         total_llm_calls = sum(r.llm_calls for r in items)
         total_time = sum(r.total_time_ms for r in items)
+
+        ci_low, ci_high = clopper_pearson_ci(successes, completes, confidence=0.95)
 
         rows.append({
             "bountytask": bountytask,
@@ -178,6 +182,8 @@ def aggregate_runs(runs: List[RunRecord]) -> List[dict]:
             "avg_time_per_llm_call_ms": (
                 total_time / total_llm_calls if total_llm_calls else 0
             ),
+            "measured_success_rate": successes / completes if completes else 0,
+            "clopper_pearson_ci": {"low": ci_low, "high": ci_high},
         })
 
     return rows
@@ -191,11 +197,16 @@ def main():
 
     runs: List[RunRecord] = []
 
-    for fname in os.listdir(INPUT_DIR):
-        if fname.endswith(".json"):
-            record = parse_log(fname)
-            if record:
-                runs.append(record)
+    for root, _, files in os.walk(INPUT_DIR):
+        for fname in files:
+            if fname.endswith(".json"):
+                rel_path = os.path.relpath(
+                    os.path.join(root, fname),
+                    INPUT_DIR
+                )
+                record = parse_log(rel_path)
+                if record and record.model_name != "unknown":
+                    runs.append(record)
 
     if not runs:
         print("No valid logs found.")

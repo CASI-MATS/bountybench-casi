@@ -11,7 +11,7 @@ cd "$SCRIPT_DIR"
 # Configuration
 # =====================
 PYTHON_SCRIPT="log_analysis.py"
-INPUT_DIR="analysis_in"
+INPUT_DIR="../logs"
 OUTPUT_DIR="analysis_out"
 
 GREEN='\033[0;32m'
@@ -53,7 +53,7 @@ mkdir -p "$INPUT_DIR" "$OUTPUT_DIR"
 # =====================
 # Check for JSON input
 # =====================
-FILE_COUNT=$(find "$INPUT_DIR" -maxdepth 1 -name "*.json" | wc -l)
+FILE_COUNT=$(find "$INPUT_DIR" -type f -name "*.json" | wc -l)
 
 if [ "$FILE_COUNT" -eq 0 ]; then
     echo -e "${YELLOW}No JSON log files found in '$INPUT_DIR'.${NC}"

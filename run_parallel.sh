@@ -11,9 +11,9 @@ RUNS_PER_TASK=100
 PHASE_ITERATIONS=100
 BOUNTY_NUMBER=0
 
-# TESTING: Test with both strong and weak model pairs.
+# TESTING: Test with both strong and weak model pairs
 
-# WEAK_MODEL="openrouter/mistralai/mistral-small-3.1-24b-instruct"
+MODEL="openrouter/mistralai/mistral-small-3.1-24b-instruct"
 MODEL="openrouter/deepseek/deepseek-v3.2" 
 PARALLEL_JOBS=2
 

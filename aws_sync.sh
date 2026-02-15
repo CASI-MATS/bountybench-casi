@@ -4,10 +4,13 @@
 # pull = EC2 → local (logs from task runs and any remote edits)
 # both = push then pull (default)
 
-EC2_HOST="ubuntu@ec2-3-22-233-10.us-east-2.compute.amazonaws.com"
-EC2_KEY="~/arav-1.pem"
+# Source the .env file
+source .env
+
+EC2_HOST=$EC2_HOST  # e.g. "ubuntu@compute-instance-id.compute.amazonaws.com"
+EC2_KEY=$EC2_KEY  # e.g. "~/<key-name>.pem"
 REMOTE_DIR="~/bountybench-casi"
-LOCAL_DIR="/home/aravs/bountybench-casi"
+LOCAL_DIR=$LOCAL_DIR  # e.g. "/home/<username>/bountybench-casi"
 
 RSYNC_EXCLUDES="--exclude venv --exclude .git --exclude bountytasks/.git"
 RSYNC_EXCLUDES="$RSYNC_EXCLUDES --exclude __pycache__ --exclude frontend --exclude node_modules"

@@ -1,7 +1,6 @@
 from typing import Tuple
 
 import requests
-import uuid
 
 REASONING_MODELS = ["o1", "o3", "o4"]
 EXTENDED_THINKING_SUFFIX = "-extended-thinking"
@@ -179,59 +178,3 @@ def _auth_xai_api_key(
             return False, str(e)
 
     return False, response.text
-
-def _auth_openrouter_api_key(
-    api_key: str, model_name: str = None, verify_model: bool = False) -> Tuple[bool, str]:
-    # OpenRouter's models endpoint
-    url = "https://openrouter.ai/api/v1/models"
-    headers = {"Authorization": f"Bearer {api_key}"}
-
-    response = requests.get(url, headers=headers)
-
-    if response.status_code == 200:
-        try:
-            if not verify_model or model_name is None:
-                return True, ""
-
-            # Get list of available models
-            models_data = response.json()["data"]
-            valid_models = [model["id"] for model in models_data]
-
-            # Extract the actual model ID from the full path
-            # e.g., "openrouter/anthropic/claude-3-5-sonnet-20241022" -> "anthropic/claude-3-5-sonnet-20241022"
-            model_id = "/".join(model_name.split("/")[1:])
-
-            if model_id not in valid_models:
-                error_msg = (
-                    f"Model {model_name} not found.\n\n"
-                    f"Available models from OpenRouter: {valid_models[:10]}... "
-                    f"(showing first 10 of {len(valid_models)} models)\n\n"
-                    f"Visit https://openrouter.ai/models for the full list."
-                )
-                raise ValueError(error_msg)
-
-            return True, ""
-        except Exception as e:
-            return False, str(e)
-
-    # Handle authentication errors
-    if response.status_code == 401:
-        return False, "Invalid OpenRouter API key"
-    elif response.status_code == 403:
-        return False, "OpenRouter API key does not have permission to access models"
-    
-    return False, response.text
-
-def _auth_casi_api_key(
-    api_key: str, model_name: str = None, verify_model: bool = False) -> Tuple[bool, str]:
-    if not api_key:
-        return False, "API key is required"
-    if not api_key.startswith("rt_"):
-        return False, "API key must start with 'rt_'"
-    parts = api_key.split("_", 2)
-    if len(parts) < 3:
-        return False, "API key format invalid. Expected format: rt_<user_id>_sk-or-..."
-    
-    if not parts[2].startswith("sk-or-"):
-        return False, "OpenRouter key portion must start with 'sk-or-'"
-    return True, ""

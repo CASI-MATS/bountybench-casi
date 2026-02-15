@@ -7,19 +7,21 @@ set -e
 
 # Configs
 
-RUNS_PER_TASK=100
+RUNS_PER_TASK=5
 PHASE_ITERATIONS=100
 BOUNTY_NUMBER=0
 
 # TESTING: Test with both strong and weak model pairs
 
-MODEL="openrouter/mistralai/mistral-small-3.1-24b-instruct"
-MODEL="openrouter/deepseek/deepseek-v3.2" 
-PARALLEL_JOBS=2
+# MODEL="openrouter/mistralai/mistral-small-3.2-24b-instruct"
+# MODEL="openrouter/qwen/qwen3-coder-flash" or coder-next
+# MODEL="openrouter/minimax/minimax-m2.5"
+# MODEL="openrouter/deepseek/deepseek-v3.2" 
+MODEL="openrouter/moonshotai/kimi-k2-thinking"
+PARALLEL_JOBS=10
+BBENCH_TASKS=("kedro" "yaml" "zipp" "curl") #"vllm" "astropy" "gluon-cv" "llama_index" "parse-url" "setuptools") # ("undici" "vllm" "yaml" "zipp")
 
-BBENCH_TASKS=("tables" "tests" "undici" "vllm" "yaml" "zipp")
-
-WORKFLOWS=("exploit_workflow" "patch_workflow")
+WORKFLOWS=("exploit_workflow")
 
 # Script
 
@@ -62,6 +64,14 @@ run_single_task() {
 export -f run_single_task
 export SCRIPT_DIRECTORY RUNS_PER_TASK PHASE_ITERATIONS BOUNTY_NUMBER MODEL PARALLEL_JOBS LOG_DIR
 
+# Cap PARALLEL_JOBS to num_tasks. Each task has one git repo and Docker setup;
+# two jobs on the same task (e.g. kedro exploit + kedro patch) would conflict.
+NUM_TASKS=${#BBENCH_TASKS[@]}
+if [[ "$PARALLEL_JOBS" -gt "$NUM_TASKS" ]]; then
+    echo "Capping PARALLEL_JOBS from $PARALLEL_JOBS to $NUM_TASKS (one job per task max to avoid git/Docker conflicts)"
+    PARALLEL_JOBS=$NUM_TASKS
+fi
+
 echo "=============================================="
 echo "BountyBench Parallel Run"
 echo "  Runs per task: $RUNS_PER_TASK"
@@ -69,16 +79,17 @@ echo "  Phase iterations (msg max): $PHASE_ITERATIONS"
 echo "  Model: $MODEL"
 echo "  Tasks: ${BBENCH_TASKS[*]}"
 echo "  Workflows: ${WORKFLOWS[*]}"
-echo "  Parallel jobs: $PARALLEL_JOBS"
+echo "  Parallel jobs: $PARALLEL_JOBS (max $NUM_TASKS per task)"
 echo "  Log dir: $LOG_DIR"
 echo "=============================================="
 
-# Iterate through all task-workflow-run_idx combinations to build the job list
+# Build job list: run -> workflow -> task. Ensures each parallel batch has
+# at most one job per task (e.g. kedro, yaml, zipp, curl), avoiding git/Docker conflicts.
 JOBS_FILE="${LOG_DIR}/.jobs_$$.txt"
 : > "$JOBS_FILE"
-for task in "${BBENCH_TASKS[@]}"; do
+for ((run=1; run<=RUNS_PER_TASK; run++)); do
     for workflow in "${WORKFLOWS[@]}"; do
-        for ((run=1; run<=RUNS_PER_TASK; run++)); do
+        for task in "${BBENCH_TASKS[@]}"; do
             echo "$workflow $task $run" >> "$JOBS_FILE"
         done
     done

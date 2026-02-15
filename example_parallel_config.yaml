@@ -1,0 +1,30 @@
+# Example config for run_parallel.py
+# Same format as run_experiments.py configs.
+#
+# Usage:
+#   python run_parallel.py example_parallel_config.yaml
+#   python run_parallel.py example_parallel_config.yaml --max-parallel 4
+#   python run_parallel.py example_parallel_config.yaml --workdir /tmp/bb_runs
+#   python run_parallel.py example_parallel_config.yaml --keep-clones
+
+workflow_type: exploit_workflow
+trials_per_config: 1
+
+tasks:
+  - task_dir: bountytasks/lunary
+    bounty_number: "0"
+  # Add more tasks to run in parallel:
+  # - task_dir: bountytasks/astropy
+  #   bounty_number: "0"
+  # - task_dir: bountytasks/gunicorn
+  #   bounty_number: "0"
+
+models:
+  - name: anthropic/claude-3-5-sonnet-20241022
+  # - name: openai/gpt-4o
+  #   helm: false
+
+phase_iterations: 1
+
+# Optional: use mock model for testing the parallel runner itself
+# use_mock_model: true

@@ -56,7 +56,7 @@ IS_WINDOWS = platform.system() == "Windows"
 
 # Directories to skip when cloning (saves disk and time).
 # The runner falls back to sys.executable if clone's venv is missing.
-CLONE_SKIP_DIRS = {"venv", ".venv", "node_modules", "__pycache__", ".mypy_cache"}
+CLONE_SKIP_DIRS = {"venv", ".venv", "node_modules", "__pycache__", ".mypy_cache", "bountytasks"}
 
 
 def _log(msg: str, level: str = "INFO") -> None:
@@ -140,17 +140,17 @@ def group_jobs_by_port_conflict(jobs: List[Dict]) -> List[List[Dict]]:
 # Clone management
 # ---------------------------------------------------------------------------
 
-def create_clone(source_repo: Path, workdir: Path, job_id: str) -> Path:
+def create_clone(source_repo: Path, workdir: Path, job_id: str, task_dir: str) -> Path:
     """
     Create a deep copy of the BountyBench repo for an isolated run.
-    Skips venv/node_modules/__pycache__ to save disk.
+    Skips venv/node_modules/__pycache__/bountytasks to save disk,
+    then copies only the single task subdirectory the job needs.
     """
     clone_dir = workdir / f"bb_job_{job_id}"
     _log(f"[{job_id}] Cloning repo -> {clone_dir}")
 
-    def _ignore(directory: str, contents: list) -> list:
+    def _ignore(_directory: str, contents: list) -> list:
         """Skip large/unnecessary directories."""
-        dirname = os.path.basename(directory)
         ignored = []
         for item in contents:
             if item in CLONE_SKIP_DIRS:
@@ -175,6 +175,16 @@ def create_clone(source_repo: Path, workdir: Path, job_id: str) -> Path:
             shutil.copytree(src_git, dst_git, symlinks=True)
     else:
         shutil.copytree(source_repo, clone_dir, symlinks=True, ignore=_ignore)
+
+    # Copy only the single task directory this job needs (e.g. bountytasks/lunary)
+    src_task = source_repo / task_dir
+    dst_task = clone_dir / task_dir
+    if src_task.is_dir():
+        shutil.copytree(src_task, dst_task, symlinks=True)
+    else:
+        # task_dir doesn't exist yet — create the parent so paths don't break
+        dst_task.mkdir(parents=True, exist_ok=True)
+        _log(f"[{job_id}] Warning: {task_dir} not found in source repo", "WARN")
 
     _log(f"[{job_id}] Clone ready ({_dir_size_mb(clone_dir):.0f} MB)")
     return clone_dir
@@ -450,31 +460,34 @@ def cleanup_kali_containers_by_network(network_name: str) -> None:
 # Log collection
 # ---------------------------------------------------------------------------
 
-def _collect_logs(clone_dir: Path, job_log_dir: Path, job_id: str) -> None:
+def _collect_logs(clone_dir: Path, logs_base: Path, job_id: str) -> None:
     """
-    Collect ALL logs from a job's clone into the central parallel_logs directory.
+    Collect logs from a job's clone into shared parallel_logs subdirectories.
 
     BountyBench produces logs in several places (all relative to cwd):
       - logs/          JSON workflow result logs
       - full_logs/     Verbose archived text logs
-      - error_logs/    Error reports on workflow failure
-      - app.log        Running text log (at repo root)
 
-    This runs in the `finally` block so logs are saved even on crashes.
+    Files are copied into shared folders with job_id prefixes to avoid
+    name collisions:
+      parallel_logs/logs/{job_id}__{original_filename}
+      parallel_logs/full_logs/{job_id}__{original_filename}
     """
-    job_log_dir.mkdir(parents=True, exist_ok=True)
-
-    # Copy each log directory tree
     for dir_name in ["logs", "full_logs"]:
         src = clone_dir / dir_name
         if not src.exists() or not src.is_dir():
             continue
-        # Check if there's actually anything inside (rglob is safe on empty dirs)
-        if not any(src.rglob("*")):
-            continue
-        dst = job_log_dir / dir_name
+        dst_dir = logs_base / dir_name
+        dst_dir.mkdir(parents=True, exist_ok=True)
         try:
-            shutil.copytree(src, dst, dirs_exist_ok=True)
+            for src_file in src.rglob("*"):
+                if not src_file.is_file():
+                    continue
+                # Preserve subdirectory structure relative to src, prefixed with job_id
+                rel = src_file.relative_to(src)
+                dst_file = dst_dir / f"{job_id}__{rel}"
+                dst_file.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_file, dst_file)
         except Exception as e:
             _log(f"[{job_id}] Warning: failed to copy {dir_name}/: {e}", "WARN")
 
@@ -551,9 +564,10 @@ async def run_job(
                  f"bounty={job['bounty_number']} model={job['model']}")
             result["status"] = "running"
 
-            # 1. Create isolated clone (skip venv/node_modules)
+            # 1. Create isolated clone (skip venv/node_modules/bountytasks,
+            #    then copy only the single task directory this job needs)
             clone_dir = await asyncio.get_event_loop().run_in_executor(
-                None, create_clone, source_repo, workdir, job_id
+                None, create_clone, source_repo, workdir, job_id, job["task_dir"]
             )
             result["clone_dir"] = str(clone_dir)
 
@@ -582,16 +596,14 @@ async def run_job(
                         k, _, v = line.partition("=")
                         env.setdefault(k.strip(), v.strip())
 
-            # 6. Create per-job log directory in the ORIGINAL repo
-            job_log_dir = source_repo / "parallel_logs" / job_id
-            job_log_dir.mkdir(parents=True, exist_ok=True)
-            stdout_log = job_log_dir / "stdout.log"
-            stderr_log = job_log_dir / "stderr.log"
-
-            # Write job metadata for later reference
-            (job_log_dir / "job.yaml").write_text(
-                yaml.dump(job, default_flow_style=False), encoding="utf-8"
-            )
+            # 6. Set up log paths in shared parallel_logs subdirectories
+            logs_base = source_repo / "parallel_logs"
+            stdout_dir = logs_base / "stdout"
+            stderr_dir = logs_base / "stderr"
+            stdout_dir.mkdir(parents=True, exist_ok=True)
+            stderr_dir.mkdir(parents=True, exist_ok=True)
+            stdout_log = stdout_dir / f"{job_id}.log"
+            stderr_log = stderr_dir / f"{job_id}.log"
 
             # 7. Run the workflow
             _log(f"[{job_id}] Executing: {' '.join(cmd[-6:])}")
@@ -622,9 +634,10 @@ async def run_job(
         finally:
             # 8. Collect ALL logs from clone to central directory.
             #    This runs in `finally` so logs are saved even on crashes.
+            logs_base = source_repo / "parallel_logs"
             if clone_dir and clone_dir.exists():
                 await asyncio.get_event_loop().run_in_executor(
-                    None, _collect_logs, clone_dir, job_log_dir, job_id
+                    None, _collect_logs, clone_dir, logs_base, job_id
                 )
 
             # 9. Targeted cleanup: only this job's Docker resources

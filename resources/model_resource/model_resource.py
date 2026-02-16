@@ -139,14 +139,14 @@ class ModelResource(RunnableBaseResource):
                 from resources.model_resource.anthropic_models.anthropic_models import (
                     AnthropicModels,
                 )
-
                 model_provider = AnthropicModels()
+
             elif model_prefix == "google":
                 from resources.model_resource.google_models.google_models import (
                     GoogleModels,
                 )
-
                 model_provider = GoogleModels()
+
             elif (
                 # TODO: Remove this once we have a better way to handle model prefixes for Together models
                 model_prefix == "meta-llama"
@@ -156,18 +156,26 @@ class ModelResource(RunnableBaseResource):
                 from resources.model_resource.together_models.together_models import (
                     TogetherModels,
                 )
-
                 model_provider = TogetherModels()
+
             elif model_prefix == "openai":
                 from resources.model_resource.openai_models.openai_models import (
                     OpenAIModels,
                 )
-
                 model_provider = OpenAIModels()
+
             elif model_prefix == "xai":
                 from resources.model_resource.xai_models.xai_models import XAIModels
-
                 model_provider = XAIModels()
+
+            elif model_prefix == "openrouter":
+                from resources.model_resource.openrouter_models.openrouter_models import OpenRouterModels
+                model_provider = OpenRouterModels()
+
+            elif model_prefix in ["casiv0", "casiv1", "casiv2"] :
+                from resources.model_resource.casi_models.casi_models import CASIModels
+                model_provider = CASIModels(variant=model_prefix[4:])
+
             else:
                 raise Exception(f"Unknown model type: {self.model}")
         return model_provider

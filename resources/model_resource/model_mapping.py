@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import ClassVar, Dict
+from typing import ClassVar, Dict, Optional
 
 from resources.model_resource.services.service_providers import ServiceProvider
 
@@ -224,6 +224,9 @@ class NonHelmMapping:
         "openai/gpt-4.1-2025-04-14": NonHelmModelInfo(
             model_name="gpt-4.1-2025-04-14", provider=ServiceProvider.OPENAI
         ),
+        "openai/gpt-4o-mini": NonHelmModelInfo(
+            model_name="openai/gpt-4o-mini", provider=ServiceProvider.OPENAI
+        ),
         # ------------------------
         # Anthropic Models (Claude)
         # ------------------------
@@ -304,6 +307,34 @@ class NonHelmMapping:
         ),
     }
 
+    @classmethod
+    def get_model_info(cls, model_name: str) -> Optional[NonHelmModelInfo]:
+        """
+        Get model info with support for whitelist agnostic OpenRouter and CASI models.
+        """
+        if model_name in cls.mapping:
+            return cls.mapping[model_name]
+        
+        # Handle OpenRouter models
+        if model_name.startswith("openrouter/"):
+            model_path = model_name.replace("openrouter/", "", 1)
+            return NonHelmModelInfo(
+                model_name=model_path,
+                provider=ServiceProvider.OPENROUTER
+            )
+        
+        # Handle CASI models
+        if model_name.startswith("casi"):
+            slash_idx = model_name.find("/")
+            if slash_idx != -1:
+                model_path = model_name[slash_idx + 1:]
+                return NonHelmModelInfo(
+                    model_name=model_path,
+                    provider=ServiceProvider.CASI
+                )
+        
+        return None
+
 
 @dataclass
 class ModelRegistry:
@@ -342,9 +373,9 @@ def get_model_info(model_name: str, helm: bool) -> HelmModelInfo | NonHelmModelI
                 f"No HELM model info found for model name: {model_name}"
             ) from err
     else:
-        try:
-            return NonHelmMapping.mapping[model_name]
-        except KeyError as err:
+        info = NonHelmMapping.get_model_info(model_name)
+        if info is None:
             raise ValueError(
                 f"No non-HELM model info found for model name: {model_name}"
-            ) from err
+            )
+        return info

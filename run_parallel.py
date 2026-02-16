@@ -125,61 +125,15 @@ def _get_ports_for_task(task_dir: str) -> List[int]:
 
 def group_jobs_by_port_conflict(jobs: List[Dict]) -> List[List[Dict]]:
     """
-    Group jobs so that overlapping Docker port users run sequentially.
-    Non-conflicting groups run fully in parallel.
+    Group jobs into parallel-safe lists.
 
-    Jobs for the SAME task_dir+bounty always go in the same group
-    (they'd create identical containers/ports).
+    Since each job's docker-compose host ports are remapped to 0 (Docker
+    auto-assigns free ports), there are no port collisions even for the
+    same task_dir+bounty.  Every job gets its own group and can run fully
+    in parallel.
     """
-    # First, group by (task_dir, bounty_number) — these ALWAYS conflict
-    task_key = lambda j: (j["task_dir"], j["bounty_number"])
-    task_buckets: Dict[Tuple, List[Dict]] = defaultdict(list)
-    for job in jobs:
-        task_buckets[task_key(job)].append(job)
-
-    # Now merge buckets that share ports
-    port_to_group: Dict[int, int] = {}
-    groups: Dict[int, List[Dict]] = defaultdict(list)
-    next_gid = 0
-
-    for key, bucket in task_buckets.items():
-        ports = _get_ports_for_task(key[0])
-        existing_gid = None
-        for p in ports:
-            if p in port_to_group:
-                existing_gid = port_to_group[p]
-                break
-
-        if existing_gid is not None:
-            gid = existing_gid
-        else:
-            gid = next_gid
-            next_gid += 1
-
-        groups[gid].extend(bucket)
-        for p in ports:
-            port_to_group[p] = gid
-
-    # Buckets with no detected ports: each bucket becomes its own group
-    # (different task_dirs are safe; same task_dir already bucketed together)
-    result = []
-    for gid in sorted(groups.keys()):
-        grp = groups[gid]
-        task_dirs_in_group = {j["task_dir"] for j in grp}
-        all_portless = all(
-            len(_get_ports_for_task(td)) == 0 for td in task_dirs_in_group
-        )
-        if all_portless and len(task_dirs_in_group) > 1:
-            # Split by task_dir since they can't conflict without ports
-            by_td: Dict[str, List[Dict]] = defaultdict(list)
-            for j in grp:
-                by_td[j["task_dir"]].append(j)
-            for sub in by_td.values():
-                result.append(sub)
-        else:
-            result.append(grp)
-
-    return result
+    # Each job is its own group — full parallelism
+    return [[job] for job in jobs]
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +353,18 @@ def _patch_one_compose_file(
             flags=re.MULTILINE,
         )
 
+        # Remap host ports to 0 (Docker auto-assigns a free port).
+        # This prevents port collisions when running multiple jobs for the
+        # same task in parallel.  The container port stays the same, and
+        # container-to-container traffic uses Docker DNS — not host ports.
+        # Matches:  - "8080:80"  or  - 8080:80  or  - "8080:80/tcp"
+        content = re.sub(
+            r'^(\s*)-\s*(["\']?)(\d+):(\d+(?:/\w+)?)\2\s*$',
+            lambda m: f'{m.group(1)}- {m.group(2)}0:{m.group(4)}{m.group(2)}',
+            content,
+            flags=re.MULTILINE,
+        )
+
         if content != original:
             dc_path.write_text(content, encoding="utf-8")
     except (UnicodeDecodeError, PermissionError):
@@ -478,6 +444,39 @@ def cleanup_kali_containers_by_network(network_name: str) -> None:
                 )
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Log collection
+# ---------------------------------------------------------------------------
+
+def _collect_logs(clone_dir: Path, job_log_dir: Path, job_id: str) -> None:
+    """
+    Collect ALL logs from a job's clone into the central parallel_logs directory.
+
+    BountyBench produces logs in several places (all relative to cwd):
+      - logs/          JSON workflow result logs
+      - full_logs/     Verbose archived text logs
+      - error_logs/    Error reports on workflow failure
+      - app.log        Running text log (at repo root)
+
+    This runs in the `finally` block so logs are saved even on crashes.
+    """
+    job_log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy each log directory tree
+    for dir_name in ["logs", "full_logs"]:
+        src = clone_dir / dir_name
+        if not src.exists() or not src.is_dir():
+            continue
+        # Check if there's actually anything inside (rglob is safe on empty dirs)
+        if not any(src.rglob("*")):
+            continue
+        dst = job_log_dir / dir_name
+        try:
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+        except Exception as e:
+            _log(f"[{job_id}] Warning: failed to copy {dir_name}/: {e}", "WARN")
 
 
 # ---------------------------------------------------------------------------
@@ -612,18 +611,6 @@ async def run_job(
             result["duration_s"] = round(duration, 1)
             result["status"] = "completed" if returncode == 0 else "failed"
 
-            # 8. Copy workflow logs from clone back to central location
-            for log_src_dir in ["logs", "full_logs", "error_logs"]:
-                src = clone_dir / log_src_dir
-                if src.exists() and any(src.iterdir()):
-                    dst = job_log_dir / log_src_dir
-                    await asyncio.get_event_loop().run_in_executor(
-                        None,
-                        lambda s=src, d=dst: shutil.copytree(
-                            s, d, dirs_exist_ok=True
-                        ),
-                    )
-
             icon = "OK" if returncode == 0 else "FAIL"
             _log(f"[{job_id}] {icon} (exit={returncode}, {result['duration_s']}s)")
 
@@ -633,6 +620,13 @@ async def run_job(
             _log(f"[{job_id}] ERROR: {e}", "ERROR")
 
         finally:
+            # 8. Collect ALL logs from clone to central directory.
+            #    This runs in `finally` so logs are saved even on crashes.
+            if clone_dir and clone_dir.exists():
+                await asyncio.get_event_loop().run_in_executor(
+                    None, _collect_logs, clone_dir, job_log_dir, job_id
+                )
+
             # 9. Targeted cleanup: only this job's Docker resources
             _log(f"[{job_id}] Cleaning up Docker resources...")
 

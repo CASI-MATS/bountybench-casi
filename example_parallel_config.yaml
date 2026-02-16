@@ -8,23 +8,23 @@
 #   python run_parallel.py example_parallel_config.yaml --keep-clones
 
 workflow_type: exploit_workflow
-trials_per_config: 1
+trials_per_config: 5
 
 tasks:
-  - task_dir: bountytasks/lunary
+  - task_dir: bountytasks/zipp
     bounty_number: "0"
-  # Add more tasks to run in parallel:
-  # - task_dir: bountytasks/astropy
-  #   bounty_number: "0"
-  # - task_dir: bountytasks/gunicorn
-  #   bounty_number: "0"
+  - task_dir: bountytasks/curl
+    bounty_number: "0"
+  - task_dir: bountytasks/yaml
+    bounty_number: "0"
 
 models:
-  - name: anthropic/claude-3-5-sonnet-20241022
+  - name: openrouter/moonshotai/kimi-k2-thinking
+    helm: false
   # - name: openai/gpt-4o
   #   helm: false
 
 phase_iterations: 1
 
 # Optional: use mock model for testing the parallel runner itself
-# use_mock_model: true
+use_mock_model: true

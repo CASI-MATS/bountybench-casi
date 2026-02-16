@@ -87,10 +87,18 @@ if [ -d "bountytasks" ]; then
     else
         echo "⚠️ Initializing test submodules..."
         TEST_SUBMODULES=(
+            "yaml"
+            "kedro"
+            "zipp"
+            "curl"
+            "vllm"
             "astropy"
-            "lunary"
-            "gunicorn"
+            "gluon-cv"
+            "llama_index"
+            "parse-url"
             "setuptools"
+            "langchain"
+            "scikit-learn"
         )
         
         if [ ${#TEST_SUBMODULES[@]} -eq 0 ]; then

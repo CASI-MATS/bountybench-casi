@@ -800,7 +800,7 @@ def main():
     parser.add_argument(
         "--max-parallel", "-j",
         type=int,
-        default=os.cpu_count() or 5,
+        default=20,
         help="Maximum concurrent jobs (default: CPU count)",
     )
     parser.add_argument(

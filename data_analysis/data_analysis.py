@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import sys
@@ -8,11 +9,11 @@ from scipy import stats
 import numpy as np
 
 # =====================
-# Configuration
+# Configuration (defaults)
 # =====================
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-INPUT_DIR = os.path.join(SCRIPT_DIR, "..", "logs")
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "analysis_out")
+DEFAULT_INPUT_DIR = os.path.join(SCRIPT_DIR, "..", "logs")
+DEFAULT_OUTPUT_DIR = os.path.join(SCRIPT_DIR, "analysis_out")
 SUMMARY_FILE = "summary.json"
 
 # =====================
@@ -66,10 +67,6 @@ class RunRecord:
 # =====================
 # Helpers
 # =====================
-def ensure_dirs():
-    os.makedirs(INPUT_DIR, exist_ok=True)
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
 def get_safe(data, path, default=None):
     try:
         for key in path:
@@ -148,16 +145,7 @@ def list_output_files(directory: str):
 # =====================
 # Per-log processing
 # =====================
-def parse_log(filename) -> RunRecord | None:
-    path = os.path.join(INPUT_DIR, filename)
-
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception as e:
-        print(f"Failed to read {filename}: {e}")
-        return None
-
+def parse_log_data(data: dict, filename: str = "") -> RunRecord | None:
     wf_meta = data.get("workflow_metadata", {})
     summary = wf_meta.get("workflow_summary", {})
     task = wf_meta.get("task", {})
@@ -252,19 +240,39 @@ def aggregate_runs(runs: List[RunRecord]) -> List[dict]:
 # =====================
 # Main
 # =====================
+def parse_args():
+    parser = argparse.ArgumentParser(description="Analyze BountyBench log files.")
+    parser.add_argument(
+        "-i", "--input",
+        default=DEFAULT_INPUT_DIR,
+        help=f"Input directory containing JSON log files (default: {DEFAULT_INPUT_DIR})",
+    )
+    parser.add_argument(
+        "-o", "--output",
+        default=DEFAULT_OUTPUT_DIR,
+        help=f"Output directory for analysis results (default: {DEFAULT_OUTPUT_DIR})",
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
+    input_dir = os.path.abspath(args.input)
+    output_dir = os.path.abspath(args.output)
+
     print(f"{GREEN}=== Log Analysis Automation ==={NC}")
     print(f"Working directory: {SCRIPT_DIR}")
     print(f"Using Python: {GREEN}{sys.version.split()[0]}{NC}")
 
-    ensure_dirs()
+    os.makedirs(input_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     # Check for JSON input files
-    file_count = count_json_files(INPUT_DIR)
+    file_count = count_json_files(input_dir)
 
     if file_count == 0:
-        print(f"{YELLOW}No JSON log files found in '{INPUT_DIR}'.{NC}")
-        print(f"Copy logs into {INPUT_DIR} and re-run.")
+        print(f"{YELLOW}No JSON log files found in '{input_dir}'.{NC}")
+        print(f"Copy logs into {input_dir} and re-run.")
         return
 
     print(f"Found {GREEN}{file_count}{NC} log files")
@@ -273,14 +281,22 @@ def main():
     # Parse all logs
     runs: List[RunRecord] = []
 
-    for root, _, files in os.walk(INPUT_DIR):
+    for root, _, files in os.walk(input_dir):
         for fname in files:
             if fname.endswith(".json"):
                 rel_path = os.path.relpath(
                     os.path.join(root, fname),
-                    INPUT_DIR
+                    input_dir
                 )
-                record = parse_log(rel_path)
+                path = os.path.join(input_dir, rel_path)
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception as e:
+                    print(f"Failed to read {rel_path}: {e}")
+                    continue
+
+                record = parse_log_data(data, rel_path)
                 if record and record.model_name != "unknown":
                     runs.append(record)
 
@@ -291,18 +307,18 @@ def main():
     # Aggregate and write summary
     summary = aggregate_runs(runs)
 
-    out_path = os.path.join(OUTPUT_DIR, SUMMARY_FILE)
+    out_path = os.path.join(output_dir, SUMMARY_FILE)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
     print(f"Wrote summary -> {out_path}")
     print("-" * 51)
     print(f"{GREEN}Analysis complete{NC}")
-    print(f"Output directory: {GREEN}{OUTPUT_DIR}{NC}")
+    print(f"Output directory: {GREEN}{output_dir}{NC}")
 
     # Show generated files
     print("\nGenerated files:")
-    list_output_files(OUTPUT_DIR)
+    list_output_files(output_dir)
 
 
 if __name__ == "__main__":

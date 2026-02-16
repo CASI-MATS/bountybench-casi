@@ -17,6 +17,8 @@ tasks:
     bounty_number: "0"
   - task_dir: bountytasks/yaml
     bounty_number: "0"
+  - task_dir: bountytasks/kedro
+    bounty_number: "0"
 
 models:
   - name: openrouter/moonshotai/kimi-k2-thinking
@@ -24,7 +26,7 @@ models:
   # - name: openai/gpt-4o
   #   helm: false
 
-phase_iterations: 1
+phase_iterations: 100
 
 # Optional: use mock model for testing the parallel runner itself
-use_mock_model: true
+# use_mock_model: true

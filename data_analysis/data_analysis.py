@@ -180,6 +180,8 @@ def parse_log_data(data: dict, filename: str = "") -> RunRecord | None:
     )
 
 def clopper_pearson_ci(k, n, confidence=0.95):
+    if n == 0:
+        return 0.0, 0.0
     ci_low, ci_high = stats.binom.interval(confidence, n, k/n)
     return ci_low/n, ci_high/n
 

@@ -56,7 +56,7 @@ IS_WINDOWS = platform.system() == "Windows"
 
 # Directories to skip when cloning (saves disk and time).
 # The runner falls back to sys.executable if clone's venv is missing.
-CLONE_SKIP_DIRS = {"venv", ".venv", "node_modules", "__pycache__", ".mypy_cache", "bountytasks"}
+CLONE_SKIP_DIRS = {"venv", ".venv", "node_modules", "__pycache__", ".mypy_cache"}
 
 
 def _log(msg: str, level: str = "INFO") -> None:
@@ -140,16 +140,15 @@ def group_jobs_by_port_conflict(jobs: List[Dict]) -> List[List[Dict]]:
 # Clone management
 # ---------------------------------------------------------------------------
 
-def create_clone(source_repo: Path, workdir: Path, job_id: str, task_dir: str) -> Path:
+def create_clone(source_repo: Path, workdir: Path, job_id: str) -> Path:
     """
     Create a deep copy of the BountyBench repo for an isolated run.
-    Skips venv/node_modules/__pycache__/bountytasks to save disk,
-    then copies only the single task subdirectory the job needs.
+    Skips venv/node_modules/__pycache__ to save disk.
     """
     clone_dir = workdir / f"bb_job_{job_id}"
     _log(f"[{job_id}] Cloning repo -> {clone_dir}")
 
-    def _ignore(_directory: str, contents: list) -> list:
+    def _ignore(directory: str, contents: list) -> list:
         """Skip large/unnecessary directories."""
         ignored = []
         for item in contents:
@@ -175,16 +174,6 @@ def create_clone(source_repo: Path, workdir: Path, job_id: str, task_dir: str) -
             shutil.copytree(src_git, dst_git, symlinks=True)
     else:
         shutil.copytree(source_repo, clone_dir, symlinks=True, ignore=_ignore)
-
-    # Copy only the single task directory this job needs (e.g. bountytasks/lunary)
-    src_task = source_repo / task_dir
-    dst_task = clone_dir / task_dir
-    if src_task.is_dir():
-        shutil.copytree(src_task, dst_task, symlinks=True)
-    else:
-        # task_dir doesn't exist yet — create the parent so paths don't break
-        dst_task.mkdir(parents=True, exist_ok=True)
-        _log(f"[{job_id}] Warning: {task_dir} not found in source repo", "WARN")
 
     _log(f"[{job_id}] Clone ready ({_dir_size_mb(clone_dir):.0f} MB)")
     return clone_dir
@@ -564,10 +553,9 @@ async def run_job(
                  f"bounty={job['bounty_number']} model={job['model']}")
             result["status"] = "running"
 
-            # 1. Create isolated clone (skip venv/node_modules/bountytasks,
-            #    then copy only the single task directory this job needs)
+            # 1. Create isolated clone (skip venv/node_modules)
             clone_dir = await asyncio.get_event_loop().run_in_executor(
-                None, create_clone, source_repo, workdir, job_id, job["task_dir"]
+                None, create_clone, source_repo, workdir, job_id
             )
             result["clone_dir"] = str(clone_dir)
 
@@ -813,7 +801,7 @@ def main():
     parser.add_argument(
         "--max-parallel", "-j",
         type=int,
-        default=os.cpu_count() or 5,
+        default=20,
         help="Maximum concurrent jobs (default: CPU count)",
     )
     parser.add_argument(

@@ -101,7 +101,6 @@ def generate_jobs(config: Dict) -> List[Dict]:
                 "task_dir": task["task_dir"],
                 "bounty_number": str(task["bounty_number"]),
                 "model": model["name"],
-                "use_helm": model.get("helm", False),
                 "use_mock_model": mock_model,
                 "phase_iterations": iters,
                 "vulnerability_type": vuln,
@@ -510,8 +509,6 @@ def build_command(job: Dict, clone_dir: Path) -> List[str]:
     else:
         cmd.extend(["--model", job["model"]])
 
-    if job.get("use_helm"):
-        cmd.append("--use_helm")
     if job.get("vulnerability_type") and job["workflow_type"].startswith("detect_"):
         cmd.extend(["--vulnerability_type", job["vulnerability_type"]])
 

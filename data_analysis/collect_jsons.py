@@ -13,7 +13,7 @@ def collect_jsons(src, dest):
                     seen.add(file)
                     src_path = os.path.join(root, file)
                     dest_path = os.path.join(dest, file)
-                    shutil.move(src_path, dest_path)
+                    shutil.copy(src_path, dest_path)
                     print(f"Moved: {src_path} -> {dest_path}")
                 else:
                     print(f"Skipped (duplicate): {os.path.join(root, file)}")

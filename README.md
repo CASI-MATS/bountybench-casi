@@ -81,6 +81,15 @@ Run the following commands to set up the repository. **DO NOT include the `--all
 source venv/bin/activate
 ```
 
+Then, configure the `.env` file with the correct API keys.
+```bash
+nano .env
+
+# Delete all boilerplate and paste in
+OPENAI_API_KEY=sk-proj-v1-dummy
+OPENROUTER_API_KEY=sk-or-v1-<openrouter_key>
+```
+
 ## Job Configuration
 The parallelization systems by temporarily cloning the base repository to run multiple Kali-Linux Docker containers at once and ensure minimal Git interference between runs. Configure a run using a `.yaml` file. An `example_parallel_config.yaml` is provided for your reference, and some important parameters are shown below.
 ```yaml
@@ -136,4 +145,8 @@ df -h
 free -h
 docker ps
 htop
+
+# Check logs
+cd ./parallel_logs/stdout/
+cat <file_name>
 ```

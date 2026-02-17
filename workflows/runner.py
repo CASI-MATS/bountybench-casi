@@ -32,6 +32,7 @@ from workflows.patch_workflow import PatchWorkflow
 console = Console(record=True)
 
 import signal
+import threading
 
 
 def signal_handler(signum, frame):
@@ -39,8 +40,9 @@ def signal_handler(signum, frame):
     sys.exit(1)
 
 
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGINT, signal_handler)
+if threading.current_thread() is threading.main_thread():
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
 
 
 class WorkflowRunner:

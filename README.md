@@ -7,7 +7,7 @@ Follow these instructions precisely to achieve best results.
 Go to the AWS Console, and launch a new EC2 instance with the following specifications.
 - Ubuntu Linux, with default AMI
 - Change the Architecture to **64-bit (Arm)**
-- Select an Instance Type with at least 32GB RAM, (i.e., c6g.8xlarge)
+- Select an Instance Type with at least as much CPU as possible (i.e., a1.4xlarge)
 - Create a `.pem` login key if you don't already have one
 - Allow SSH, HTTPS, and HTTP traffic from anywhere
 - Configure storage to at least 200GB of gp3

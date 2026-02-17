@@ -110,10 +110,10 @@ models:
 phase_iterations: 100            # number of phase iterations (model is queried half as many times)
 ```
 
-Run a parallel run using a command below. **ENSURE the virtual environment is ACTIVE**.
+Run a parallel run using a command below. **ENSURE the virtual environment is ACTIVE**. You **MUST** run with `sudo`, this solves most of the permissions and docker issues that really hamper BountyBench operation.
 ```bash
-python run_parallel.py <config_name>.yaml
-python run_parallel.py <config_name>.yaml --max-parallel <jobs_parallel>
+sudo -E env PATH=$PATH python run_parallel.py <config_name>.yaml
+sudo -E env PATH=$PATH python run_parallel.py <config_name>.yaml --max-parallel <jobs_parallel>
 
 python run_parallel.py example_parallel_config.yaml --max-parallel 10
 ```
@@ -148,5 +148,6 @@ htop
 
 # Check logs
 cd ./parallel_logs/stdout/
+cd ./parallel_logs/stderr/
 cat <file_name>
 ```

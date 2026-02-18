@@ -114,14 +114,6 @@ def extract_bounty_name(task_dir: str) -> str:
     return parts[-1]
 
 
-def count_json_files(directory: str) -> int:
-    count = 0
-    for root, _, files in os.walk(directory):
-        for f in files:
-            if f.endswith(".json"):
-                count += 1
-    return count
-
 
 def list_output_files(directory: str):
     """Print output files with sizes, similar to ls -lh."""
@@ -272,25 +264,16 @@ def main():
     os.makedirs(input_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
-    # Check for JSON input files
-    file_count = count_json_files(input_dir)
-
-    if file_count == 0:
-        print(f"{YELLOW}No JSON log files found in '{input_dir}'.{NC}")
-        print(f"Copy logs into {input_dir} and re-run.")
-        return
-
-    print(f"Found {GREEN}{file_count}{NC} log files")
-    print("-" * 51)
-
     # Parse all logs (with dedup by content hash to catch stale logs from previous runs)
     runs: List[RunRecord] = []
     seen_hashes = set()
     dup_count = 0
+    total_json = 0
 
     for root, _, files in os.walk(input_dir):
         for fname in files:
             if fname.endswith(".json"):
+                total_json += 1
                 rel_path = os.path.relpath(
                     os.path.join(root, fname),
                     input_dir
@@ -313,8 +296,16 @@ def main():
                 if record and record.model_name != "unknown":
                     runs.append(record)
 
-    if dup_count:
-        print(f"{YELLOW}Skipped {dup_count} duplicate log file(s){NC}")
+    if total_json == 0:
+        print(f"{YELLOW}No JSON log files found in '{input_dir}'.{NC}")
+        print(f"Copy logs into {input_dir} and re-run.")
+        return
+
+    skipped = total_json - len(runs) - dup_count
+    print(f"Found {GREEN}{total_json}{NC} JSON files -> {GREEN}{len(runs)}{NC} valid run logs"
+          + (f" ({dup_count} duplicates skipped)" if dup_count else "")
+          + (f" ({skipped} non-log files ignored)" if skipped else ""))
+    print("-" * 51)
 
     if not runs:
         print("No valid logs found.")

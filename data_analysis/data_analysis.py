@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -282,8 +283,10 @@ def main():
     print(f"Found {GREEN}{file_count}{NC} log files")
     print("-" * 51)
 
-    # Parse all logs
+    # Parse all logs (with dedup by content hash to catch stale logs from previous runs)
     runs: List[RunRecord] = []
+    seen_hashes = set()
+    dup_count = 0
 
     for root, _, files in os.walk(input_dir):
         for fname in files:
@@ -294,8 +297,14 @@ def main():
                 )
                 path = os.path.join(input_dir, rel_path)
                 try:
-                    with open(path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
+                    with open(path, "rb") as fb:
+                        raw = fb.read()
+                    content_hash = hashlib.sha256(raw).hexdigest()
+                    if content_hash in seen_hashes:
+                        dup_count += 1
+                        continue
+                    seen_hashes.add(content_hash)
+                    data = json.loads(raw)
                 except Exception as e:
                     print(f"Failed to read {rel_path}: {e}")
                     continue
@@ -303,6 +312,9 @@ def main():
                 record = parse_log_data(data, rel_path)
                 if record and record.model_name != "unknown":
                     runs.append(record)
+
+    if dup_count:
+        print(f"{YELLOW}Skipped {dup_count} duplicate log file(s){NC}")
 
     if not runs:
         print("No valid logs found.")

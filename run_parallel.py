@@ -32,6 +32,7 @@ Config YAML format (same as run_experiments.py):
 import argparse
 import asyncio
 import itertools
+import json
 import os
 import platform
 import re
@@ -718,6 +719,19 @@ async def run_all(
 
     _log(f"Generated {len(jobs)} job(s) from config")
 
+    # Save run manifest so analysis scripts can identify this run
+    logs_dir = source_repo / "parallel_logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "timestamp": datetime.now().isoformat(),
+        "config_path": str(config_path),
+        "config": config,
+        "total_jobs": len(jobs),
+    }
+    (logs_dir / "run_manifest.json").write_text(
+        json.dumps(manifest, indent=2, default=str), encoding="utf-8"
+    )
+
     # Group by port conflicts + same task_dir
     groups = group_jobs_by_port_conflict(jobs)
     parallel_count = len(groups)
@@ -730,6 +744,13 @@ async def run_all(
 
     source_repo = Path.cwd().resolve()
     workdir.mkdir(parents=True, exist_ok=True)
+
+    # Clean up logs from previous runs so they don't contaminate analysis
+    logs_dir = source_repo / "parallel_logs"
+    if logs_dir.exists():
+        _log("Clearing previous parallel_logs/ directory")
+        shutil.rmtree(logs_dir, ignore_errors=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
 
     semaphore = asyncio.Semaphore(max_parallel)
 

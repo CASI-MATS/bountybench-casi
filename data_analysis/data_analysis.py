@@ -301,12 +301,6 @@ def main():
         print(f"Copy logs into {input_dir} and re-run.")
         return
 
-    skipped = total_json - len(runs) - dup_count
-    print(f"Found {GREEN}{total_json}{NC} JSON files -> {GREEN}{len(runs)}{NC} valid run logs"
-          + (f" ({dup_count} duplicates skipped)" if dup_count else "")
-          + (f" ({skipped} non-log files ignored)" if skipped else ""))
-    print("-" * 51)
-
     if not runs:
         print("No valid logs found.")
         return
@@ -326,6 +320,12 @@ def main():
     # Show generated files
     print("\nGenerated files:")
     list_output_files(output_dir)
+
+    skipped = total_json - len(runs) - dup_count
+    print(f"Found {GREEN}{total_json}{NC} JSON files -> {GREEN}{len(runs)}{NC} valid run logs"
+          + (f" ({dup_count} duplicates skipped)" if dup_count else "")
+          + (f" ({skipped} non-log files ignored)" if skipped else ""))
+    print("-" * 51)
 
 
 if __name__ == "__main__":

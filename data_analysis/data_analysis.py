@@ -146,6 +146,8 @@ def list_output_files(directory: str):
 # Per-log processing
 # =====================
 def parse_log_data(data: dict, filename: str = "") -> RunRecord | None:
+    if not isinstance(data, dict):
+        return None
     wf_meta = data.get("workflow_metadata", {})
     summary = wf_meta.get("workflow_summary", {})
     task = wf_meta.get("task", {})

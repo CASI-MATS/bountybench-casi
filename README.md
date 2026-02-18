@@ -7,7 +7,7 @@ Follow these instructions precisely to achieve best results.
 Go to the AWS Console, and launch a new EC2 instance with the following specifications.
 - Ubuntu Linux, with default AMI
 - Change the Architecture to **64-bit (Arm)**
-- Select an Instance Type with at least as much CPU as possible (i.e., a1.4xlarge)
+- Select an Instance Type with at least as much CPU as possible (i.e., c6g.4xlarge)
 - Create a `.pem` login key if you don't already have one
 - Allow SSH, HTTPS, and HTTP traffic from anywhere
 - Configure storage to at least 200GB of gp3
@@ -38,7 +38,7 @@ sudo usermod -aG docker ubuntu
 sg docker -c "echo docker group active" || true
 ```
 
-Now, restart the image once to ensure that installation has completed correctly.
+Now, restart the image once to ensure that installation has completed correctly, and that Docker is able to run.
 
 ## Repository Setup
 Clone the `bountybench-casi` repository to the image.
@@ -125,8 +125,8 @@ scp -r -i "~/.ssh/<key_name>.pem" ubuntu@<ip>:/home/ubuntu/bountybench-casi/para
 
 Before this, it may be useful to do some data preprocessing on the instance to make the data more workable. Do this with the commands below.
 ```bash
-python ./data_analysis/collect_jsons.py ./parallel_logs/logs/ ./logs/
-python ./data_analysis/data_analysis.py -i ./logs/ -o ./logs
+python data_analysis/collect_jsons.py ./parallel_logs/logs/ ./logs/
+python data_analysis/data_analysis.py -i ./logs/ -o ./logs
 ```
 
 You can then `scp` these logs to local. The `summary.json` file should contain metrics on 

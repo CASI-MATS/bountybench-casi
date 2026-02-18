@@ -1,22 +1,44 @@
+import hashlib
 import os
 import shutil
 import sys
 
 def collect_jsons(src, dest):
     os.makedirs(dest, exist_ok=True)
-    seen = set()
+    seen_names = set()
+    seen_hashes = set()
+    dup_count = 0
 
     for root, _, files in os.walk(src):
         for file in files:
             if file.lower().endswith(".json"):
-                if file not in seen:
-                    seen.add(file)
-                    src_path = os.path.join(root, file)
-                    dest_path = os.path.join(dest, file)
-                    shutil.copy(src_path, dest_path)
-                    print(f"Moved: {src_path} -> {dest_path}")
-                else:
-                    print(f"Skipped (duplicate): {os.path.join(root, file)}")
+                src_path = os.path.join(root, file)
+
+                # Dedup by content hash (catches identical files with different names)
+                with open(src_path, "rb") as fb:
+                    content_hash = hashlib.sha256(fb.read()).hexdigest()
+                if content_hash in seen_hashes:
+                    dup_count += 1
+                    print(f"Skipped (duplicate content): {src_path}")
+                    continue
+                seen_hashes.add(content_hash)
+
+                # Resolve filename collisions by appending a suffix
+                dest_name = file
+                if dest_name in seen_names:
+                    base, ext = os.path.splitext(dest_name)
+                    counter = 1
+                    while dest_name in seen_names:
+                        dest_name = f"{base}_{counter}{ext}"
+                        counter += 1
+                seen_names.add(dest_name)
+
+                dest_path = os.path.join(dest, dest_name)
+                shutil.copy(src_path, dest_path)
+                print(f"Copied: {src_path} -> {dest_path}")
+
+    if dup_count:
+        print(f"\nSkipped {dup_count} duplicate file(s) by content hash")
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:

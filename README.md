@@ -135,10 +135,12 @@ scp -r -i "~/.ssh/<key_name>.pem" ubuntu@<ip>:/home/ubuntu/bountybench-casi/logs
 ```
 
 ## Useful Commands
-Here are some useful commands to use when SSHing and working with the instances. You can try `tmux` to safely close SSH connections while keeping jobs running and running monitoring commands.
+Here are some useful commands to use when SSHing and working with the instances. You can try `tmux` to safely close SSH connections while keeping jobs running and running monitoring commands. You can detach the terminal, then close your SSH connection and the jobs will continue to run properly, then attach again for monitoring.
 ```bash
-# TMUX setup
+# TMUX setup and run
 tmux new -n bb
+source venv/bin/activate
+sudo -E env PATH=$PATH python run_parallel.py <config_name>.yaml
 
 # Monitor storage, memory, and system monitoring
 df -h
@@ -147,7 +149,8 @@ docker ps
 htop
 
 # Check logs
-cd ./parallel_logs/stdout/
-cd ./parallel_logs/stderr/
+cd parallel_logs/stdout/
+cd parallel_logs/stderr/
 cat <file_name>
+cat logs/summary.json
 ```

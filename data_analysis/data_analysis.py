@@ -52,6 +52,7 @@ NC = COLORS["NC"]
 class RunRecord:
     bountytask: str
     workflow_type: str
+    task_number: int
     model_name: str
 
     complete: bool
@@ -147,6 +148,7 @@ def parse_log_data(data: dict, filename: str = "") -> RunRecord | None:
 
     bountytask = extract_bounty_name(task.get("task_dir"))
     workflow_type = wf_meta.get("workflow_name", "unknown").replace("Workflow", "").lower()
+    task_number = task.get("bounty_number")
     model_name = get_safe(data, ["resources_used", "model", "config", "model"], "unknown")
 
     complete = bool(summary.get("complete", False))
@@ -164,6 +166,7 @@ def parse_log_data(data: dict, filename: str = "") -> RunRecord | None:
     return RunRecord(
         bountytask=bountytask,
         workflow_type=workflow_type,
+        task_number=task_number,
         model_name=model_name,
         complete=complete,
         success=success,
@@ -187,12 +190,12 @@ def aggregate_runs(runs: List[RunRecord]) -> List[dict]:
     grouped = defaultdict(list)
 
     for r in runs:
-        key = (r.bountytask, r.workflow_type, r.model_name)
+        key = (r.bountytask, r.workflow_type, r.task_number, r.model_name)
         grouped[key].append(r)
 
     rows = []
 
-    for (bountytask, workflow_type, model_name), items in grouped.items():
+    for (bountytask, workflow_type, task_number, model_name), items in grouped.items():
         runs_count = len(items)
 
         completes = sum(r.complete for r in items)
@@ -207,6 +210,7 @@ def aggregate_runs(runs: List[RunRecord]) -> List[dict]:
         rows.append({
             "bountytask": bountytask,
             "workflow_type": workflow_type,
+            "task_number": task_number,
             "model_name": model_name,
 
             "total_runs": runs_count,

@@ -24,7 +24,7 @@ mode="${1:-both}"
 
 push_sync() {
   echo ">>> Pushing local → EC2..."
-  rsync -avz --progress -e "$ssh_cmd" $RSYNC_EXCLUDES \
+  rsync -avz $EC2_KEY /aws_sync.sh /run_parallel.sh /reset_bountytasks.sh /.env /.create-venv.sh -progress -e "$ssh_cmd" $RSYNC_EXCLUDES \
     "$LOCAL_DIR/" "$EC2_HOST:$REMOTE_DIR/"
 }
 

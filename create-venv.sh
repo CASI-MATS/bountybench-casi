@@ -18,6 +18,36 @@ log_ok()   { echo -e "${GREEN}[SUCCESS]${NC} $*"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_err()  { echo -e "${RED}[ERROR]${NC} $*"; }
 
+set -e
+
+# Set these before running, e.g.: REPO_URL=https://github.com/foo/bountybench-casi.git ./ec2_reset_and_clone.sh
+REPO_URL="${REPO_URL:-https://github.com/CASI-MATS/bountybench-casi.git}"
+BRANCH="${BRANCH:-main}"
+HOME_DIR="${HOME:-/home/ubuntu}"
+PROJECT_DIR="$HOME_DIR/bountybench-casi"
+
+echo "=== EC2 Full Reset: Remove and re-clone bountybench-casi ==="
+echo "Repo: $REPO_URL"
+echo "Branch: $BRANCH"
+echo ""
+
+# 1. Backup .env if it exists
+if [ -f "$PROJECT_DIR/.env" ]; then
+  cp "$PROJECT_DIR/.env" /tmp/bountybench_env_backup.env
+  echo "Backed up .env to /tmp/bountybench_env_backup.env"
+else
+  echo "No .env found to backup"
+fi
+
+# 2. Remove everything
+echo "Removing $PROJECT_DIR..."
+rm -rf "$PROJECT_DIR"
+
+# 3. Clone fresh with submodules
+echo "Cloning fresh..."
+git clone "$BRANCH" "$REPO_URL" "$PROJECT_DIR"
+cd "$PROJECT_DIR"
+
 # Install Docker (required for BountyBench workflows - spins up Kali containers)
 if command -v docker &>/dev/null; then
   log_ok "✅ Docker is installed: $(docker --version)"
@@ -53,7 +83,6 @@ fi
 
 # Create virtual environment
 cd ~/bountybench-casi
-# Note: Script runs in a fresh subshell, so no venv is active. Skip deactivate.
 log_info "Removing existing virtual environment (if any)..."
 rm -rf venv
 log_ok "Creating new virtual environment..."

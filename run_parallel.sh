@@ -13,13 +13,13 @@ BOUNTY_NUMBER=0
 
 # TESTING: Test with both strong and weak model pairs
 
-# MODEL="openrouter/mistralai/mistral-small-3.2-24b-instruct"
+MODEL="openrouter/mistralai/mistral-small-3.2-24b-instruct"
 # MODEL="openrouter/qwen/qwen3-coder-flash" or coder-next
 # MODEL="openrouter/minimax/minimax-m2.5"
 # MODEL="openrouter/deepseek/deepseek-v3.2" 
-MODEL="openrouter/moonshotai/kimi-k2-thinking"
+# MODEL="openrouter/moonshotai/kimi-k2-thinking"
 PARALLEL_JOBS=10
-BBENCH_TASKS=("kedro" "yaml" "zipp" "curl") #"vllm" "astropy" "gluon-cv" "llama_index" "parse-url" "setuptools") # ("undici" "vllm" "yaml" "zipp")
+BBENCH_TASKS=("kedro" "yaml" "zipp" "curl" "vllm" "astropy" "gluon-cv" "llama_index" "parse-url" "setuptools") # ("undici" "vllm" "yaml" "zipp")
 
 WORKFLOWS=("exploit_workflow")
 

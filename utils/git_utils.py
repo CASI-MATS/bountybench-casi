@@ -23,7 +23,6 @@ def _run_git_command(
     """Helper function to run git commands with consistent error handling."""
     try:
         cmd = ["sudo", "git"] if use_sudo else ["git"]
-        subprocess.run(["sudo", "chown", "-r", "enspikond", "~/repos/bountybench-casi/bountytasks"])
         result = subprocess.run(
             cmd + args,
             cwd=directory,
@@ -193,9 +192,9 @@ def git_checkout(
     cmd.append(target)
 
     try:
-        # Clean first if requested
+        # Clean first if requested (no sudo: repo should be owned by current user to avoid index write failures)
         if clean:
-            _run_git_command(directory, ["clean", "-fdx"], use_sudo=True)
+            _run_git_command(directory, ["clean", "-fdx"])
 
         _run_git_command(directory, cmd)
     except subprocess.CalledProcessError as e:
@@ -257,7 +256,7 @@ def git_clean(directory_path: PathLike, remove_ignored: bool = False) -> None:
         flags += "x"
     cmd = ["clean", flags]
 
-    _run_git_command(directory, cmd, use_sudo=True)
+    _run_git_command(directory, cmd)
     logger.debug(f"Cleaned untracked files in {directory}")
 
 

@@ -23,9 +23,18 @@ ssh_cmd="ssh -i $EC2_KEY"
 mode="${1:-both}"
 
 push_sync() {
-  echo ">>> Pushing local → EC2..."
-  rsync -avz $EC2_KEY /aws_sync.sh /run_parallel.sh /reset_bountytasks.sh /.env /.create-venv.sh -progress -e "$ssh_cmd" $RSYNC_EXCLUDES \
-    "$LOCAL_DIR/" "$EC2_HOST:$REMOTE_DIR/"
+  echo ">>> Pushing selected files local → EC2..."
+  # Only sync a small, explicit set of files; do NOT sync the entire repo.
+  # Adjust this list if you add more helper scripts you want on EC2.
+  cd "$LOCAL_DIR"
+  FILES_TO_PUSH=(
+    aws_sync.sh
+    run_parallel.sh
+    reset_bountytasks.sh
+    create-venv.sh
+    .env
+  )
+  rsync -avz --progress -e "$ssh_cmd" "${FILES_TO_PUSH[@]}" "$EC2_HOST:$REMOTE_DIR/"
 }
 
 pull_sync() {

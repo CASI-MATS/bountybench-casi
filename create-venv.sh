@@ -81,7 +81,15 @@ git submodule update --init
 cd ..
 log_ok "Submodules initialized and updated."
 
+# Ensure full repo (including bountytasks) is owned by current user so git checkouts work
+log_info "Setting ownership to $USER (required for workflow git operations)..."
+sudo chown -R "$USER:$USER" ~/bountybench-casi
+log_ok "Ownership set."
 
+# Remove any stale git index locks so workflows do not hit 'fatal: unable to write new index file'
+log_info "Removing stale git index locks in bountytasks..."
+find ~/bountybench-casi/bountytasks -name "index.lock" -delete 2>/dev/null || true
+log_ok "Done. You can run begin running parallel workflows with ./run_parallel.sh"
 
 # Use following command to monitor/increase the size of the nvme0n1p1 partition if needed (i.e. if you increase space in the EC2 instance volume)
 

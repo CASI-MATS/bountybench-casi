@@ -18,7 +18,7 @@ MODEL="openrouter/mistralai/mistral-small-3.2-24b-instruct"
 # MODEL="openrouter/minimax/minimax-m2.5"
 # MODEL="openrouter/deepseek/deepseek-v3.2" 
 # MODEL="openrouter/moonshotai/kimi-k2-thinking"
-PARALLEL_JOBS=10
+PARALLEL_JOBS=2
 BBENCH_TASKS=("kedro" "yaml" "zipp" "curl" "vllm" "astropy" "gluon-cv" "llama_index" "parse-url" "setuptools") # ("undici" "vllm" "yaml" "zipp")
 
 WORKFLOWS=("exploit_workflow" "patch_workflow")
@@ -72,8 +72,22 @@ if [[ "$PARALLEL_JOBS" -gt "$NUM_TASKS" ]]; then
     PARALLEL_JOBS=$NUM_TASKS
 fi
 
+# Build job list: run -> workflow -> task.
+# JOBS_FILE="${LOG_DIR}/.jobs_$$.txt"
+# : > "$JOBS_FILE"
+# for ((run=1; run<=RUNS_PER_TASK; run++)); do
+#     for workflow in "${WORKFLOWS[@]}"; do
+#         for task in "${BBENCH_TASKS[@]}"; do
+#             echo "$workflow $task $run" >> "$JOBS_FILE"
+#         done
+#     done
+# done
+# TOTAL_JOBS=$(wc -l < "$JOBS_FILE")
+
+TOTAL_JOBS=$((RUNS_PER_TASK * ${#WORKFLOWS[@]} * NUM_TASKS))
 echo "=============================================="
 echo "BountyBench Parallel Run"
+echo "  Total jobs: $TOTAL_JOBS (${NUM_TASKS} tasks x ${#WORKFLOWS[@]} workflows x $RUNS_PER_TASK runs)"
 echo "  Runs per task: $RUNS_PER_TASK"
 echo "  Phase iterations (msg max): $PHASE_ITERATIONS"
 echo "  Model: $MODEL"
@@ -83,27 +97,53 @@ echo "  Parallel jobs: $PARALLEL_JOBS (max $NUM_TASKS per task)"
 echo "  Log dir: $LOG_DIR"
 echo "=============================================="
 
-# Build job list: run -> workflow -> task. Ensures each parallel batch has
-# at most one job per task (e.g. kedro, yaml, zipp, curl), avoiding git/Docker conflicts.
-JOBS_FILE="${LOG_DIR}/.jobs_$$.txt"
-: > "$JOBS_FILE"
-for ((run=1; run<=RUNS_PER_TASK; run++)); do
-    for workflow in "${WORKFLOWS[@]}"; do
-        for task in "${BBENCH_TASKS[@]}"; do
-            echo "$workflow $task $run" >> "$JOBS_FILE"
+run_all_for_task() {
+    local task="$1"
+    for ((run=1; run<=RUNS_PER_TASK; run++)); do
+        for workflow in "${WORKFLOWS[@]}"; do
+            run_single_task "$workflow" "$task" "$run"
         done
     done
+}
+
+# Run each task in its own background subshell
+pids=()
+for task in "${BBENCH_TASKS[@]}"; do
+    run_all_for_task "$task" &
+    pids+=($!)
+    echo "Started task $task (PID $!)"
 done
 
-if command -v parallel &>/dev/null && [[ "$PARALLEL_JOBS" -gt 1 ]]; then
-    echo "Using GNU parallel with $PARALLEL_JOBS jobs..."
-    parallel -j "$PARALLEL_JOBS" --colsep ' ' -a "$JOBS_FILE" run_single_task {1} {2} {3}
-else
-    echo "Running sequentially..."
-    while read -r wf task run; do
-        run_single_task "$wf" "$task" "$run"
-    done < "$JOBS_FILE"
-fi
+# Wait for all tasks to finish
+for pid in "${pids[@]}"; do
+    wait "$pid"
+done
 
-rm -f "$JOBS_FILE"
 echo "[$(date -Iseconds)] All runs complete."
+
+# PARALLEL_SHELL=bash and "bash -c 'run_single_task \"\$@\"'" ensure the exported
+# function is available (parallel may use sh; sem runs the command in a subprocess).
+# --line-buffer: print each line as soon as it is ready (no waiting for job to finish).
+# --tag: prefix each line with the job (workflow task run) so you see which job produced it.
+# Remove: export -f run_single_task (no longer needed)
+
+# if command -v parallel &>/dev/null && [[ "$PARALLEL_JOBS" -gt 1 ]]; then
+#     echo "Using GNU parallel with $PARALLEL_JOBS jobs..."
+#     export BOUNTY_NUMBER PHASE_ITERATIONS MODEL LOG_DIR SCRIPT_DIRECTORY
+#     # Temporarily test with sleeps instead of real tasks
+#     parallel -j "$PARALLEL_JOBS" --colsep ' ' -a "$JOBS_FILE" \
+#     "sem --id {2} -j 1 bash -c 'echo START {1} {2} {3} at $(date +%H:%M:%S); sleep 5; echo END {2} {3} at $(date +%H:%M:%S)'"
+#     # parallel -j "$PARALLEL_JOBS" \
+#     #     --colsep ' ' \
+#     #     -a "$JOBS_FILE" \
+#     #     --line-buffer --tag \
+#     #     "sem --id {2} -j 1 ${SCRIPT_DIRECTORY}/run_task.sh {1} {2} {3}"
+# else
+#     echo "Running sequentially..."
+#     while read -r wf task run; do
+#         "${SCRIPT_DIRECTORY}/run_task.sh" "$wf" "$task" "$run"
+#     done < "$JOBS_FILE"
+# fi
+# 
+# rm -f "$JOBS_FILE"
+# echo "[$(date -Iseconds)] All runs complete."

@@ -23,7 +23,6 @@ def _run_git_command(
     """Helper function to run git commands with consistent error handling."""
     try:
         cmd = ["sudo", "git"] if use_sudo else ["git"]
-        subprocess.run(["sudo", "chown", "-r", "enspikond", "~/repos/bountybench-casi/bountytasks"])
         result = subprocess.run(
             cmd + args,
             cwd=directory,

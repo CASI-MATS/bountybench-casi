@@ -60,8 +60,15 @@ run_single_task() {
         --phase_iterations "$PHASE_ITERATIONS" \
         --logging_level INFO \
         $USE_HELM \
-        > "$log_file" 2>&1 || true
-    echo "[$(date -Iseconds)] Finished $workflow $task run $run_index (exit: $?)"
+        > "$log_file" 2>&1
+    exit_code=$?
+    echo "[$(date -Iseconds)] Finished $workflow $task run $run_index (exit: $exit_code)"
+    if [[ $exit_code -ne 0 ]]; then
+        echo "  >>> Error output from $log_file (last 25 lines):"
+        tail -25 "$log_file" | sed 's/^/  | /'
+        echo "  >>> (full log: $log_file)"
+    fi
+    return 0
 }
 
 export -f run_single_task

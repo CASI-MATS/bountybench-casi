@@ -189,6 +189,73 @@ if [[ -z "$VIRTUAL_ENV" ]]; then
     fi
 fi
 
+check_disk_health() {
+    local avail_mb inode_used_pct
+    avail_mb="$(df -Pm / | awk 'NR==2 {print $4}')"
+    inode_used_pct="$(df -Pi / | awk 'NR==2 {gsub(/%/, "", $5); print $5}')"
+
+    # git checkout/index writes fail unpredictably when disk/inodes are nearly exhausted.
+    if [[ -n "$avail_mb" && "$avail_mb" -lt 3072 ]]; then
+        echo "Error: low disk space on / (${avail_mb}MB free). Need at least 3GB free before starting parallel run."
+        echo "Run cleanup first, then retry."
+        exit 1
+    fi
+    if [[ -n "$inode_used_pct" && "$inode_used_pct" -ge 95 ]]; then
+        echo "Error: inode usage is very high (${inode_used_pct}%). git index writes may fail."
+        echo "Free files/inodes, then retry."
+        exit 1
+    fi
+}
+
+resolve_repo_gitdir() {
+    local repo="$1"
+    local git_ref="$repo/.git"
+    local gitdir_rel
+
+    if [[ -d "$git_ref" ]]; then
+        echo "$git_ref"
+        return 0
+    fi
+    if [[ -f "$git_ref" ]]; then
+        gitdir_rel="$(sed -n 's/^gitdir: //p' "$git_ref" | head -n 1)"
+        if [[ -n "$gitdir_rel" ]]; then
+            if [[ "$gitdir_rel" == /* ]]; then
+                echo "$gitdir_rel"
+            else
+                (cd "$repo" && readlink -f "$gitdir_rel")
+            fi
+            return 0
+        fi
+    fi
+    return 1
+}
+
+sanitize_task_repo() {
+    local task="$1"
+    local repo="${SCRIPT_DIRECTORY}/bountytasks/${task}/codebase"
+    local gitdir
+
+    [[ -d "$repo" ]] || return 0
+    gitdir="$(resolve_repo_gitdir "$repo" || true)"
+
+    if command -v sudo >/dev/null 2>&1; then
+        sudo chown -R "$USER:$USER" "$repo" 2>/dev/null || true
+        [[ -n "$gitdir" ]] && sudo chown -R "$USER:$USER" "$gitdir" 2>/dev/null || true
+    fi
+
+    if [[ -n "$gitdir" ]]; then
+        rm -f "$gitdir/index.lock" "$gitdir/packed-refs.lock" "$gitdir/index" 2>/dev/null || true
+    fi
+}
+
+preflight_repo_sanitize() {
+    echo "Preflight: checking disk/inodes and sanitizing task git state..."
+    check_disk_health
+    for task in "${BBENCH_TASKS[@]}"; do
+        sanitize_task_repo "$task"
+    done
+}
+
 run_single_task() {
     local workflow="$1"
     local task="$2"
@@ -255,6 +322,8 @@ echo "  Auto container cleanup: $CLEANUP_CONTAINERS"
 echo "  Run tag: $RUN_TAG"
 echo "  Log dir: $LOG_DIR"
 echo "=============================================="
+
+preflight_repo_sanitize
 
 run_all_for_task() {
     local task="$1"

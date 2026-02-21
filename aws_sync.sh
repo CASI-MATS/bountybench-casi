@@ -23,21 +23,19 @@ ssh_cmd="ssh -i $EC2_KEY"
 mode="${1:-both}"
 
 push_sync() {
-  echo ">>> Pushing selected files local → EC2..."
-  # Only sync a small, explicit set of files; do NOT sync the entire repo.
-  # To verify: after push, run e.g. md5sum utils/git_utils.py locally and on EC2 (see POST_CLONE_STEPS.md).
-  # Add any new file you want on EC2 to this list.
+  echo ">>> Pushing selected files local → EC2 (preserving paths, e.g. utils/git_utils.py)..."
+  # Use --relative and ./ so utils/git_utils.py lands in REMOTE_DIR/utils/, not REMOTE_DIR/.
+  # Add any new file you want on EC2 below (use ./path/from/repo/root).
   cd "$LOCAL_DIR"
   FILES_TO_PUSH=(
-    aws_sync.sh
-    run_parallel.sh
-    run_task.sh
-    reset_bountytasks.sh
-    create-venv.sh
-    utils/git_utils.py
-    .env
+    ./.env
+    ./aws_sync.sh
+    ./run_parallel.sh
+    ./run_task.sh
+    ./reset_bountytasks.sh
+    ./create-venv.sh
   )
-  rsync -avz --progress -e "$ssh_cmd" "${FILES_TO_PUSH[@]}" "$EC2_HOST:$REMOTE_DIR/"
+  rsync -avz --progress -e "$ssh_cmd" --relative "${FILES_TO_PUSH[@]}" "$EC2_HOST:$REMOTE_DIR/"
 }
 
 pull_sync() {

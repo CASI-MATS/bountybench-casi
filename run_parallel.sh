@@ -4,11 +4,13 @@
 # Execute on EC2 after SSH: ./run_parallel.sh
 
 set -e
+# Trap Ctrl+C and kill all child processes
+trap 'echo "Interrupted, killing all jobs..."; kill 0; exit 1' INT TERM
 
 # Configs
 
-RUNS_PER_TASK=5
-PHASE_ITERATIONS=100
+RUNS_PER_TASK=2
+PHASE_ITERATIONS=30
 BOUNTY_NUMBER=0
 
 # TESTING: Test with both strong and weak model pairs

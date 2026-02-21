@@ -171,6 +171,30 @@ def git_reset(
         raise
 
 
+def _clear_git_locks(repo_path: PathLike) -> None:
+    """Remove index.lock and packed-refs.lock so parallel or retry runs can proceed (handles submodules where .git is a file)."""
+    repo_path = Path(repo_path)
+    git_ref = repo_path / ".git"
+    if not git_ref.exists():
+        return
+    actual_git_dir: Optional[Path] = None
+    if git_ref.is_dir():
+        actual_git_dir = git_ref
+    else:
+        try:
+            content = git_ref.read_text().strip()
+            if content.startswith("gitdir:"):
+                gitdir = content.split("gitdir:")[1].strip()
+                resolved = (repo_path / gitdir).resolve()
+                if resolved.is_dir():
+                    actual_git_dir = resolved
+        except (OSError, ValueError):
+            pass
+    if actual_git_dir:
+        (actual_git_dir / "index.lock").unlink(missing_ok=True)
+        (actual_git_dir / "packed-refs.lock").unlink(missing_ok=True)
+
+
 def git_checkout(
     directory_path: PathLike, target: str, force: bool = False, clean: bool = True
 ) -> None:
@@ -185,6 +209,7 @@ def git_checkout(
     """
     directory = Path(directory_path)
     logger.debug(f"Checking out {target}")
+    _clear_git_locks(directory)
 
     cmd = ["checkout"]
     if force:
@@ -195,7 +220,7 @@ def git_checkout(
         # Clean first if requested (no sudo: repo should be owned by current user to avoid index write failures)
         if clean:
             _run_git_command(directory, ["clean", "-fdx"])
-
+        _clear_git_locks(directory)
         _run_git_command(directory, cmd)
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to checkout {target}: {e.stderr}")
@@ -552,6 +577,7 @@ def git_setup_dev_branch(
 ) -> None:
     """Set up dev branch from specified commit or main branch."""
     directory = Path(directory_path)
+    _clear_git_locks(directory)
     if not commit:
         commit = _get_main_branch(directory_path)
 

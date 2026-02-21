@@ -52,15 +52,17 @@ while [[ $# -gt 0 ]]; do
 	shift
 done
 
-image_name="bountyagent:x86_64:${tag}"
+# Use a single colon: repository:tag. "bountyagent:x86_64:latest" is invalid (tag cannot contain ':').
+image_name="bountyagent:x86_64"
+image_name_with_tag="bountyagent:x86_64_${tag}"
 
 if [[ ${build_locally} -eq 1 ]]; then
-	echo "Building locally for the current architecture..."
+	echo "Building locally for the current architecture (tag: ${image_name})..."
 	docker build -t "${image_name}" ../ "$@"
 else
 	echo "Pulling Docker image from Docker Hub..."
 	docker pull "${image_name}" || {
 		echo "Remote image not found, building locally with buildx for ${arch}..."
-		docker buildx build --platform "linux/${arch}" -t "${image_name}" --push ../ "$@"
+		docker buildx build --platform "linux/${arch}" -t "${image_name_with_tag}" --push ../ "$@"
 	}
 fi

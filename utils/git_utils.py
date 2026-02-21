@@ -201,20 +201,27 @@ def _clear_git_locks(repo_path: PathLike) -> None:
 
 
 def _repair_repo_ownership(repo_path: PathLike) -> bool:
-    """Repair repo ownership so host-side git clean/checkout can remove files created by root in containers."""
-    path = Path(repo_path)
-    try:
-        subprocess.run(
-            ["sudo", "chown", "-R", f"{os.getuid()}:{os.getgid()}", str(path)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        logger.warning(f"Repaired ownership for {path}")
-        return True
-    except subprocess.CalledProcessError as e:
-        logger.warning(f"Failed to repair ownership for {path}: {e.stderr}")
-        return False
+    """Repair ownership for repo worktree and real gitdir (submodule gitdirs may live outside the worktree)."""
+    worktree = Path(repo_path)
+    gitdir = _get_actual_git_dir(worktree)
+    targets = [worktree]
+    if gitdir and gitdir not in targets:
+        targets.append(gitdir)
+
+    all_ok = True
+    for target in targets:
+        try:
+            subprocess.run(
+                ["sudo", "chown", "-R", f"{os.getuid()}:{os.getgid()}", str(target)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            logger.warning(f"Repaired ownership for {target}")
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Failed to repair ownership for {target}: {e.stderr}")
+            all_ok = False
+    return all_ok
 
 
 def git_checkout(
@@ -257,7 +264,20 @@ def git_checkout(
         actual_git_dir = _get_actual_git_dir(directory)
         if actual_git_dir:
             (actual_git_dir / "index").unlink(missing_ok=True)
-        _run_git_command(directory, cmd)
+        try:
+            _run_git_command(directory, cmd)
+        except subprocess.CalledProcessError:
+            logger.warning(
+                f"Initial git checkout failed in {directory}; attempting one ownership repair and retry",
+                stacklevel=2,
+            )
+            if not _repair_repo_ownership(directory):
+                raise
+            _clear_git_locks(directory)
+            actual_git_dir = _get_actual_git_dir(directory)
+            if actual_git_dir:
+                (actual_git_dir / "index").unlink(missing_ok=True)
+            _run_git_command(directory, cmd)
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to checkout {target}: {e.stderr}")
         raise

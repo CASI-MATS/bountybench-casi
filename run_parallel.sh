@@ -21,6 +21,8 @@ MODEL="openrouter/mistralai/mistral-small-3.2-24b-instruct"
 # MODEL="openrouter/minimax/minimax-m2.5"
 # MODEL="openrouter/deepseek/deepseek-v3.2" 
 # MODEL="openrouter/moonshotai/kimi-k2-thinking"
+# One dedicated worker per task. If PARALLEL_JOBS differs from task count,
+# script auto-aligns PARALLEL_JOBS to the number of tasks.
 PARALLEL_JOBS=10
 BBENCH_TASKS=("kedro" "yaml" "zipp" "curl" "vllm" "astropy" "gluon-cv" "llama_index" "parse-url" "setuptools") # ("undici" "vllm" "yaml" "zipp")
 
@@ -195,6 +197,7 @@ run_single_task() {
     mkdir -p "${LOG_DIR}/${task}"
     echo "[$(date +%Y-%m-%d\ %H:%M:%S)] Running ${task} with ${workflow} for run ${run_index} -> $log_file"
 
+    set +e
     "${SCRIPT_DIRECTORY}/venv/bin/python" -m workflows.runner \
         --workflow-type "$workflow" \
         --task_dir "bountytasks/${task}" \
@@ -205,6 +208,7 @@ run_single_task() {
         $USE_HELM \
         > "$log_file" 2>&1
     exit_code=$?
+    set -e
     echo "[$(date -Iseconds)] Finished $workflow $task run $run_index (exit: $exit_code)"
     if [[ $exit_code -ne 0 ]]; then
         echo "  >>> Error output from $log_file (last 25 lines):"
@@ -217,11 +221,11 @@ run_single_task() {
 export -f run_single_task
 export SCRIPT_DIRECTORY RUNS_PER_TASK PHASE_ITERATIONS BOUNTY_NUMBER MODEL PARALLEL_JOBS LOG_DIR
 
-# Cap PARALLEL_JOBS to num_tasks. Each task has one git repo and Docker setup;
-# two jobs on the same task (e.g. kedro exploit + kedro patch) would conflict.
+# Dedicated-worker mode: one worker per task.
+# Each task has one git repo and Docker setup; two workers for one task would conflict.
 NUM_TASKS=${#BBENCH_TASKS[@]}
-if [[ "$PARALLEL_JOBS" -gt "$NUM_TASKS" ]]; then
-    echo "Capping PARALLEL_JOBS from $PARALLEL_JOBS to $NUM_TASKS (one job per task max to avoid git/Docker conflicts)"
+if [[ "$PARALLEL_JOBS" -ne "$NUM_TASKS" ]]; then
+    echo "Aligning PARALLEL_JOBS from $PARALLEL_JOBS to $NUM_TASKS (one dedicated worker per task)"
     PARALLEL_JOBS=$NUM_TASKS
 fi
 
@@ -246,7 +250,7 @@ echo "  Phase iterations (msg max): $PHASE_ITERATIONS"
 echo "  Model: $MODEL"
 echo "  Tasks: ${BBENCH_TASKS[*]}"
 echo "  Workflows: ${WORKFLOWS[*]}"
-echo "  Parallel jobs: $PARALLEL_JOBS (max $NUM_TASKS per task)"
+echo "  Parallel jobs: $PARALLEL_JOBS (one dedicated worker per task)"
 echo "  Auto container cleanup: $CLEANUP_CONTAINERS"
 echo "  Run tag: $RUN_TAG"
 echo "  Log dir: $LOG_DIR"
@@ -262,6 +266,7 @@ run_all_for_task() {
 }
 
 # Run each task in its own background subshell
+echo "Launching $NUM_TASKS dedicated task workers..."
 for task in "${BBENCH_TASKS[@]}"; do
     run_all_for_task "$task" &
     pids+=($!)
@@ -270,7 +275,9 @@ done
 
 # Wait for all tasks to finish
 for pid in "${pids[@]}"; do
-    wait "$pid"
+    if ! wait "$pid"; then
+        echo "Worker PID $pid exited non-zero"
+    fi
 done
 
 echo "[$(date -Iseconds)] All runs complete."

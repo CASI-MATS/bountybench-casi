@@ -4,8 +4,9 @@
 # Execute on EC2 after SSH: ./run_parallel.sh
 
 set -e
-# Trap Ctrl+C and kill all child processes
-trap 'echo "Interrupted, killing all jobs..."; kill 0; exit 1' INT TERM
+# PIDs of background task processes (used by trap to kill only our jobs, avoiding kill 0 which can segfault)
+pids=()
+trap 'echo "Interrupted, stopping jobs..."; for p in "${pids[@]}"; do kill -TERM "$p" 2>/dev/null || true; done; exit 130' INT TERM
 
 # Configs
 
@@ -109,7 +110,6 @@ run_all_for_task() {
 }
 
 # Run each task in its own background subshell
-pids=()
 for task in "${BBENCH_TASKS[@]}"; do
     run_all_for_task "$task" &
     pids+=($!)

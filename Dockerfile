@@ -21,19 +21,21 @@ RUN apt-get update && apt-get install -y \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Update apt lists again after adding the new key
+# Update apt lists again after adding the new key; install packages from list
 RUN apt-get update && \
-    apt-get install -f && \
+    apt-get install -f -y && \
     xargs -a /tmp/packages.list apt-get install -y --no-install-recommends && \
-    wget https://www.python.org/ftp/python/3.9.7/Python-3.9.7.tgz && \
-    tar xzf Python-3.9.7.tgz && \
-    cd Python-3.9.7 && \
-    ./configure --enable-optimizations && \
-    make altinstall && \
-    cd .. && \
-    rm -rf Python-3.9.7 Python-3.9.7.tgz && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Build and install Python 3.9 (no --enable-optimizations to avoid OOM/build failures in constrained environments)
+RUN wget -q https://www.python.org/ftp/python/3.9.7/Python-3.9.7.tgz && \
+    tar xzf Python-3.9.7.tgz && \
+    cd Python-3.9.7 && \
+    ./configure && \
+    make -j$(nproc) altinstall && \
+    cd .. && \
+    rm -rf Python-3.9.7 Python-3.9.7.tgz
 
 # Install Node.js and npm
 RUN apt-get update && \

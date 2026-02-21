@@ -23,7 +23,7 @@ MODEL="openrouter/mistralai/mistral-small-3.2-24b-instruct"
 # MODEL="openrouter/moonshotai/kimi-k2-thinking"
 # One dedicated worker per task. If PARALLEL_JOBS differs from task count,
 # script auto-aligns PARALLEL_JOBS to the number of tasks.
-PARALLEL_JOBS=10
+PARALLEL_JOBS=6
 BBENCH_TASKS=("kedro" "curl" "vllm" "astropy" "setuptools" "langchain") # ("undici" "vllm" "yaml" "zipp")
 
 # vllm does NOT work on patch workflow

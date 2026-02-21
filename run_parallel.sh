@@ -21,7 +21,7 @@ MODEL="openrouter/mistralai/mistral-small-3.2-24b-instruct"
 # MODEL="openrouter/minimax/minimax-m2.5"
 # MODEL="openrouter/deepseek/deepseek-v3.2" 
 # MODEL="openrouter/moonshotai/kimi-k2-thinking"
-PARALLEL_JOBS=10
+PARALLEL_JOBS=4
 BBENCH_TASKS=("kedro" "yaml" "zipp" "curl" "vllm" "astropy" "gluon-cv" "llama_index" "parse-url" "setuptools") # ("undici" "vllm" "yaml" "zipp")
 
 WORKFLOWS=("exploit_workflow" "patch_workflow")

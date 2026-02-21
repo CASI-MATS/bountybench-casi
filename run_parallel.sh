@@ -6,11 +6,11 @@
 set -e
 # PIDs of background task processes (used by trap to kill only our jobs, avoiding kill 0 which can segfault)
 pids=()
-trap 'echo "Interrupted, stopping jobs..."; for p in "${pids[@]}"; do kill -TERM "$p" 2>/dev/null || true; done; exit 130' INT TERM
+BASELINE_KALI_CONTAINERS=()
 
 # Configs
 
-RUNS_PER_TASK=5
+RUNS_PER_TASK=100
 PHASE_ITERATIONS=100
 BOUNTY_NUMBER=0
 
@@ -21,16 +21,17 @@ MODEL="openrouter/mistralai/mistral-small-3.2-24b-instruct"
 # MODEL="openrouter/minimax/minimax-m2.5"
 # MODEL="openrouter/deepseek/deepseek-v3.2" 
 # MODEL="openrouter/moonshotai/kimi-k2-thinking"
-PARALLEL_JOBS=4
+PARALLEL_JOBS=10
 BBENCH_TASKS=("kedro" "yaml" "zipp" "curl" "vllm" "astropy" "gluon-cv" "llama_index" "parse-url" "setuptools") # ("undici" "vllm" "yaml" "zipp")
 
 WORKFLOWS=("exploit_workflow" "patch_workflow")
 
 MODEL_ARG=""
 RUN_TAG=""
+CLEANUP_CONTAINERS=1
 
 print_help() {
-    echo "Usage: $0 [--model <alias|full_model>] [--run-tag <tag>]"
+    echo "Usage: $0 [--model <alias|full_model>] [--run-tag <tag>] [--no-container-cleanup]"
     echo ""
     echo "Model aliases:"
     echo "  mistral      -> openrouter/mistralai/mistral-small-3.2-24b-instruct"
@@ -45,6 +46,54 @@ print_help() {
     echo "  ./run_parallel.sh qwen3"
     echo "  ./run_parallel.sh --model openrouter/qwen/qwen3-coder-flash --run-tag test_qwen3"
 }
+
+capture_baseline_containers() {
+    # Track existing kali_env containers so we only clean up those started by this run.
+    mapfile -t BASELINE_KALI_CONTAINERS < <(docker ps -aq --filter "name=kali_env_" 2>/dev/null || true)
+}
+
+cleanup_new_kali_containers() {
+    [[ "$CLEANUP_CONTAINERS" -eq 1 ]] || return 0
+    command -v docker >/dev/null 2>&1 || return 0
+
+    local cid
+    local -a current_kali_ids=()
+    mapfile -t current_kali_ids < <(docker ps -aq --filter "name=kali_env_" 2>/dev/null || true)
+    [[ ${#current_kali_ids[@]} -gt 0 ]] || return 0
+
+    declare -A baseline_lookup=()
+    for cid in "${BASELINE_KALI_CONTAINERS[@]}"; do
+        baseline_lookup["$cid"]=1
+    done
+
+    local -a new_ids=()
+    for cid in "${current_kali_ids[@]}"; do
+        if [[ -z "${baseline_lookup[$cid]:-}" ]]; then
+            new_ids+=("$cid")
+        fi
+    done
+
+    if [[ ${#new_ids[@]} -gt 0 ]]; then
+        echo "Cleaning up ${#new_ids[@]} run-created kali_env container(s)..."
+        docker rm -f "${new_ids[@]}" >/dev/null 2>&1 || true
+    fi
+}
+
+handle_interrupt() {
+    echo "Interrupted, stopping jobs..."
+    for p in "${pids[@]}"; do
+        kill -TERM "$p" 2>/dev/null || true
+    done
+    cleanup_new_kali_containers
+    exit 130
+}
+
+handle_exit() {
+    cleanup_new_kali_containers
+}
+
+trap handle_interrupt INT TERM
+trap handle_exit EXIT
 
 resolve_model() {
     local choice="${1,,}"
@@ -92,6 +141,10 @@ while [[ $# -gt 0 ]]; do
             RUN_TAG="$2"
             shift 2
             ;;
+        --no-container-cleanup)
+            CLEANUP_CONTAINERS=0
+            shift
+            ;;
         --help|-h)
             print_help
             exit 0
@@ -116,6 +169,7 @@ MODEL="$(resolve_model "$MODEL_ARG")"
 
 SCRIPT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" # Switch to script directory for execution
 cd "$SCRIPT_DIRECTORY"
+capture_baseline_containers
 if [[ -z "$RUN_TAG" ]]; then
     RUN_TAG="$(date +%Y%m%d_%H%M%S)_$$"
 fi
@@ -193,6 +247,7 @@ echo "  Model: $MODEL"
 echo "  Tasks: ${BBENCH_TASKS[*]}"
 echo "  Workflows: ${WORKFLOWS[*]}"
 echo "  Parallel jobs: $PARALLEL_JOBS (max $NUM_TASKS per task)"
+echo "  Auto container cleanup: $CLEANUP_CONTAINERS"
 echo "  Run tag: $RUN_TAG"
 echo "  Log dir: $LOG_DIR"
 echo "=============================================="
@@ -220,29 +275,23 @@ done
 
 echo "[$(date -Iseconds)] All runs complete."
 
-# PARALLEL_SHELL=bash and "bash -c 'run_single_task \"\$@\"'" ensure the exported
-# function is available (parallel may use sh; sem runs the command in a subprocess).
-# --line-buffer: print each line as soon as it is ready (no waiting for job to finish).
-# --tag: prefix each line with the job (workflow task run) so you see which job produced it.
-# Remove: export -f run_single_task (no longer needed)
+# Check which background tasks are running
+# pgrep -af "run_parallel.sh|workflows.runner"
 
-# if command -v parallel &>/dev/null && [[ "$PARALLEL_JOBS" -gt 1 ]]; then
-#     echo "Using GNU parallel with $PARALLEL_JOBS jobs..."
-#     export BOUNTY_NUMBER PHASE_ITERATIONS MODEL LOG_DIR SCRIPT_DIRECTORY
-#     # Temporarily test with sleeps instead of real tasks
-#     parallel -j "$PARALLEL_JOBS" --colsep ' ' -a "$JOBS_FILE" \
-#     "sem --id {2} -j 1 bash -c 'echo START {1} {2} {3} at $(date +%H:%M:%S); sleep 5; echo END {2} {3} at $(date +%H:%M:%S)'"
-#     # parallel -j "$PARALLEL_JOBS" \
-#     #     --colsep ' ' \
-#     #     -a "$JOBS_FILE" \
-#     #     --line-buffer --tag \
-#     #     "sem --id {2} -j 1 ${SCRIPT_DIRECTORY}/run_task.sh {1} {2} {3}"
-# else
-#     echo "Running sequentially..."
-#     while read -r wf task run; do
-#         "${SCRIPT_DIRECTORY}/run_task.sh" "$wf" "$task" "$run"
-#     done < "$JOBS_FILE"
-# fi
-# 
-# rm -f "$JOBS_FILE"
-# echo "[$(date -Iseconds)] All runs complete."
+# Check which Docker containers are still running (should be none from this run, since the script closes them)
+# docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Status}}"
+
+# Remove old containers immediately
+# docker rm -f $(docker ps -aq --filter "name=kali_env_") 2>/dev/null || true
+
+# Prune if needed
+# docker container prune -f
+
+####### To kill all tasks immediately/close all containers: #######
+
+# pkill -f "run_parallel.sh|workflows.runner" || true; pkill -9 -f "python.*workflows.runner" || true; docker rm -f $(docker ps -aq --filter "name=kali_env_") 2>/dev/null || true
+
+# Verify that all processes have stopped
+
+# pgrep -af "run_parallel.sh|workflows.runner" || echo "No runner processes"
+# docker ps --filter "name=kali_env_"

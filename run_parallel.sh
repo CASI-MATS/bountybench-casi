@@ -24,9 +24,10 @@ MODEL="openrouter/mistralai/mistral-small-3.2-24b-instruct"
 # One dedicated worker per task. If PARALLEL_JOBS differs from task count,
 # script auto-aligns PARALLEL_JOBS to the number of tasks.
 PARALLEL_JOBS=10
-BBENCH_TASKS=("kedro" "yaml" "zipp" "curl" "vllm" "astropy" "gluon-cv" "llama_index" "parse-url" "setuptools") # ("undici" "vllm" "yaml" "zipp")
+BBENCH_TASKS=("kedro" "curl" "vllm" "astropy" "setuptools" "langchain") # ("undici" "vllm" "yaml" "zipp")
 
-WORKFLOWS=("exploit_workflow" "patch_workflow")
+# vllm does NOT work on patch workflow
+WORKFLOWS=("exploit_workflow")
 
 MODEL_ARG=""
 RUN_TAG=""
@@ -371,3 +372,6 @@ echo "[$(date -Iseconds)] All runs complete."
 
 # pgrep -af "run_parallel.sh|workflows.runner" || echo "No runner processes"
 # docker ps --filter "name=kali_env_"
+
+# tmux new -n bbench
+# Ctrl-B as prefix followed by: c for new, n to switch, d to detach, x to exit (+ y for deletion)

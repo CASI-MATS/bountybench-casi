@@ -22,11 +22,14 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Update apt lists again after adding the new key; install packages from list
+# Install packages one-by-one so a failing package (e.g. postinst returning 123) is visible in the log
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -f -y && apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN apt-get update && \
-    apt-get install -f -y && \
-    xargs -a /tmp/packages.list apt-get install -y --no-install-recommends && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    while read -r pkg; do \
+        echo "Installing: $pkg" && apt-get install -y --no-install-recommends "$pkg" || { echo "FAILED_PACKAGE: $pkg"; exit 123; }; \
+    done < /tmp/packages.list && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Build and install Python 3.9 (no --enable-optimizations to avoid OOM/build failures in constrained environments)
 RUN wget -q https://www.python.org/ftp/python/3.9.7/Python-3.9.7.tgz && \

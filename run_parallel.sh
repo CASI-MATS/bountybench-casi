@@ -10,8 +10,8 @@ trap 'echo "Interrupted, stopping jobs..."; for p in "${pids[@]}"; do kill -TERM
 
 # Configs
 
-RUNS_PER_TASK=2
-PHASE_ITERATIONS=30
+RUNS_PER_TASK=5
+PHASE_ITERATIONS=100
 BOUNTY_NUMBER=0
 
 # TESTING: Test with both strong and weak model pairs
@@ -21,16 +21,105 @@ MODEL="openrouter/mistralai/mistral-small-3.2-24b-instruct"
 # MODEL="openrouter/minimax/minimax-m2.5"
 # MODEL="openrouter/deepseek/deepseek-v3.2" 
 # MODEL="openrouter/moonshotai/kimi-k2-thinking"
-PARALLEL_JOBS=2
-BBENCH_TASKS=("kedro" "yaml" "zipp" "curl") # "vllm" "astropy" "gluon-cv" "llama_index" "parse-url" "setuptools" ("undici" "vllm" "yaml" "zipp")
+PARALLEL_JOBS=10
+BBENCH_TASKS=("kedro" "yaml" "zipp" "curl" "vllm" "astropy" "gluon-cv" "llama_index" "parse-url" "setuptools") # ("undici" "vllm" "yaml" "zipp")
 
 WORKFLOWS=("exploit_workflow" "patch_workflow")
+
+MODEL_ARG=""
+RUN_TAG=""
+
+print_help() {
+    echo "Usage: $0 [--model <alias|full_model>] [--run-tag <tag>]"
+    echo ""
+    echo "Model aliases:"
+    echo "  mistral      -> openrouter/mistralai/mistral-small-3.2-24b-instruct"
+    echo "  qwen3        -> openrouter/qwen/qwen3-coder-flash"
+    echo "  qwen3-next   -> openrouter/qwen/qwen3-coder-next"
+    echo "  minimax      -> openrouter/minimax/minimax-m2.5"
+    echo "  deepseek     -> openrouter/deepseek/deepseek-v3.2"
+    echo "  kimi         -> openrouter/moonshotai/kimi-k2-thinking"
+    echo ""
+    echo "Examples:"
+    echo "  ./run_parallel.sh --model mistral"
+    echo "  ./run_parallel.sh qwen3"
+    echo "  ./run_parallel.sh --model openrouter/qwen/qwen3-coder-flash --run-tag test_qwen3"
+}
+
+resolve_model() {
+    local choice="${1,,}"
+    case "$choice" in
+        ""|"mistral")
+            echo "openrouter/mistralai/mistral-small-3.2-24b-instruct"
+            ;;
+        "qwen3"|"qwen3-flash")
+            echo "openrouter/qwen/qwen3-coder-flash"
+            ;;
+        "qwen3-next")
+            echo "openrouter/qwen/qwen3-coder-next"
+            ;;
+        "minimax")
+            echo "openrouter/minimax/minimax-m2.5"
+            ;;
+        "deepseek")
+            echo "openrouter/deepseek/deepseek-v3.2"
+            ;;
+        "kimi"|"kimi-k2")
+            echo "openrouter/moonshotai/kimi-k2-thinking"
+            ;;
+        *)
+            # If user passed a full model path, use it directly.
+            if [[ "$1" == *"/"* ]]; then
+                echo "$1"
+            else
+                echo "Unknown model alias: $1" >&2
+                print_help >&2
+                exit 1
+            fi
+            ;;
+    esac
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --model)
+            [[ -z "${2:-}" ]] && { echo "Error: --model requires a value"; exit 1; }
+            MODEL_ARG="$2"
+            shift 2
+            ;;
+        --run-tag)
+            [[ -z "${2:-}" ]] && { echo "Error: --run-tag requires a value"; exit 1; }
+            RUN_TAG="$2"
+            shift 2
+            ;;
+        --help|-h)
+            print_help
+            exit 0
+            ;;
+        *)
+            # Support positional shortcut: ./run_parallel.sh qwen3
+            if [[ -z "$MODEL_ARG" ]]; then
+                MODEL_ARG="$1"
+                shift
+            else
+                echo "Unknown argument: $1" >&2
+                print_help >&2
+                exit 1
+            fi
+            ;;
+    esac
+done
+
+MODEL="$(resolve_model "$MODEL_ARG")"
 
 # Script
 
 SCRIPT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" # Switch to script directory for execution
 cd "$SCRIPT_DIRECTORY"
-LOG_DIR="${SCRIPT_DIRECTORY}/logs_parallel"
+if [[ -z "$RUN_TAG" ]]; then
+    RUN_TAG="$(date +%Y%m%d_%H%M%S)_$$"
+fi
+LOG_DIR="${SCRIPT_DIRECTORY}/logs_parallel/${RUN_TAG}"
 mkdir -p "$LOG_DIR"
 
 # Ensure BountyBench virtual environment is activated
@@ -104,6 +193,7 @@ echo "  Model: $MODEL"
 echo "  Tasks: ${BBENCH_TASKS[*]}"
 echo "  Workflows: ${WORKFLOWS[*]}"
 echo "  Parallel jobs: $PARALLEL_JOBS (max $NUM_TASKS per task)"
+echo "  Run tag: $RUN_TAG"
 echo "  Log dir: $LOG_DIR"
 echo "=============================================="
 

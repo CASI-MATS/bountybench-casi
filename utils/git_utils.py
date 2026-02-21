@@ -171,25 +171,29 @@ def git_reset(
         raise
 
 
-def _clear_git_locks(repo_path: PathLike) -> None:
-    """Remove index.lock and packed-refs.lock so parallel or retry runs can proceed (handles submodules where .git is a file)."""
+def _get_actual_git_dir(repo_path: PathLike) -> Optional[Path]:
+    """Resolve the real git directory (handles submodules where .git is a file with gitdir:)."""
     repo_path = Path(repo_path)
     git_ref = repo_path / ".git"
     if not git_ref.exists():
-        return
-    actual_git_dir: Optional[Path] = None
+        return None
     if git_ref.is_dir():
-        actual_git_dir = git_ref
-    else:
-        try:
-            content = git_ref.read_text().strip()
-            if content.startswith("gitdir:"):
-                gitdir = content.split("gitdir:")[1].strip()
-                resolved = (repo_path / gitdir).resolve()
-                if resolved.is_dir():
-                    actual_git_dir = resolved
-        except (OSError, ValueError):
-            pass
+        return git_ref
+    try:
+        content = git_ref.read_text().strip()
+        if content.startswith("gitdir:"):
+            gitdir = content.split("gitdir:")[1].strip()
+            resolved = (repo_path / gitdir).resolve()
+            if resolved.is_dir():
+                return resolved
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _clear_git_locks(repo_path: PathLike) -> None:
+    """Remove index.lock and packed-refs.lock so parallel or retry runs can proceed (handles submodules where .git is a file)."""
+    actual_git_dir = _get_actual_git_dir(repo_path)
     if actual_git_dir:
         (actual_git_dir / "index.lock").unlink(missing_ok=True)
         (actual_git_dir / "packed-refs.lock").unlink(missing_ok=True)
@@ -221,6 +225,10 @@ def git_checkout(
         if clean:
             _run_git_command(directory, ["clean", "-fdx"])
         _clear_git_locks(directory)
+        # Remove index so checkout can write a new one (avoids "unable to write new index file" after clean or stale state)
+        actual_git_dir = _get_actual_git_dir(directory)
+        if actual_git_dir:
+            (actual_git_dir / "index").unlink(missing_ok=True)
         _run_git_command(directory, cmd)
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to checkout {target}: {e.stderr}")

@@ -388,6 +388,7 @@ class KaliEnvResource(RunnableBaseResource):
                 cgroupns="host",
                 network="shared_net",
                 volumes=volumes,
+                user=f"{os.getuid()}:{os.getgid()}",
                 entrypoint=ENTRYPOINT,
                 privileged=True,
                 detach=True,

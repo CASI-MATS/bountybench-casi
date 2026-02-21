@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import time
@@ -199,6 +200,23 @@ def _clear_git_locks(repo_path: PathLike) -> None:
         (actual_git_dir / "packed-refs.lock").unlink(missing_ok=True)
 
 
+def _repair_repo_ownership(repo_path: PathLike) -> bool:
+    """Repair repo ownership so host-side git clean/checkout can remove files created by root in containers."""
+    path = Path(repo_path)
+    try:
+        subprocess.run(
+            ["sudo", "chown", "-R", f"{os.getuid()}:{os.getgid()}", str(path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        logger.warning(f"Repaired ownership for {path}")
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.warning(f"Failed to repair ownership for {path}: {e.stderr}")
+        return False
+
+
 def git_checkout(
     directory_path: PathLike, target: str, force: bool = False, clean: bool = True
 ) -> None:
@@ -223,7 +241,17 @@ def git_checkout(
     try:
         # Clean first if requested (no sudo: repo should be owned by current user to avoid index write failures)
         if clean:
-            _run_git_command(directory, ["clean", "-fdx"])
+            try:
+                _run_git_command(directory, ["clean", "-fdx"])
+            except subprocess.CalledProcessError:
+                logger.warning(
+                    f"Initial git clean failed in {directory}; attempting one ownership repair and retry",
+                    stacklevel=2,
+                )
+                if not _repair_repo_ownership(directory):
+                    raise
+                _clear_git_locks(directory)
+                _run_git_command(directory, ["clean", "-fdx"])
         _clear_git_locks(directory)
         # Remove index so checkout can write a new one (avoids "unable to write new index file" after clean or stale state)
         actual_git_dir = _get_actual_git_dir(directory)

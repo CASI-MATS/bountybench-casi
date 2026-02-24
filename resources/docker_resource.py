@@ -1,5 +1,6 @@
 import atexit
 import json
+import os
 import threading
 import time
 import uuid
@@ -124,6 +125,7 @@ class DockerResource(RunnableBaseResource):
                 volumes=volumes,
                 network=network,
                 working_dir=work_dir,
+                user=f"{os.getuid()}:{os.getgid()}",
                 detach=True,
                 name=unique_name,
             )

@@ -233,13 +233,17 @@ resolve_repo_gitdir() {
 
 sanitize_task_repo() {
     local task="$1"
-    local repo="${SCRIPT_DIRECTORY}/bountytasks/${task}/codebase"
+    local task_root="${SCRIPT_DIRECTORY}/bountytasks/${task}"
+    local repo="${task_root}/codebase"
     local gitdir
 
-    [[ -d "$repo" ]] || return 0
+    [[ -d "$task_root" ]] || return 0
     gitdir="$(resolve_repo_gitdir "$repo" || true)"
 
     if command -v sudo >/dev/null 2>&1; then
+        # Normalize ownership for the whole task tree (bounties/tmp/exploit_files included),
+        # then for the actual gitdir used by checkout.
+        sudo chown -R "$USER:$USER" "$task_root" 2>/dev/null || true
         sudo chown -R "$USER:$USER" "$repo" 2>/dev/null || true
         [[ -n "$gitdir" ]] && sudo chown -R "$USER:$USER" "$gitdir" 2>/dev/null || true
     fi

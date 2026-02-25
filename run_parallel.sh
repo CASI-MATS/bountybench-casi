@@ -23,18 +23,19 @@ MODEL="openrouter/mistralai/mistral-small-3.2-24b-instruct"
 # MODEL="openrouter/moonshotai/kimi-k2-thinking"
 # One dedicated worker per task. If PARALLEL_JOBS differs from task count,
 # script auto-aligns PARALLEL_JOBS to the number of tasks.
-PARALLEL_JOBS=6
-BBENCH_TASKS=("kedro" "curl" "vllm" "astropy" "setuptools" "langchain") # ("undici" "vllm" "yaml" "zipp")
+PARALLEL_JOBS=10
+BBENCH_TASKS=("kedro" "curl" "astropy" "setuptools" "langchain" "gluon-cv" "parse-url" "yaml" "zipp" "llama_index") # ("undici" "vllm" "yaml" "zipp")
 
 # vllm does NOT work on patch workflow
-WORKFLOWS=("exploit_workflow")
+WORKFLOWS=("exploit_workflow" "patch_workflow")
 
 MODEL_ARG=""
+WORKFLOW_ARG="both"
 RUN_TAG=""
 CLEANUP_CONTAINERS=1
 
 print_help() {
-    echo "Usage: $0 [--model <alias|full_model>] [--run-tag <tag>] [--no-container-cleanup]"
+    echo "Usage: $0 [--model <alias|full_model>] [--workflow <exploit_workflow|patch_workflow|both>] [--run-tag <tag>] [--no-container-cleanup]"
     echo ""
     echo "Model aliases:"
     echo "  mistral      -> openrouter/mistralai/mistral-small-3.2-24b-instruct"
@@ -49,6 +50,8 @@ print_help() {
     echo "  ./run_parallel.sh --model mistral"
     echo "  ./run_parallel.sh qwen3"
     echo "  ./run_parallel.sh --model openrouter/qwen/qwen3-coder-flash --run-tag test_qwen3"
+    echo "  ./run_parallel.sh --workflow exploit_workflow"
+    echo "  ./run_parallel.sh --workflow patch_workflow --model qwen3"
 }
 
 capture_baseline_containers() {
@@ -143,6 +146,11 @@ while [[ $# -gt 0 ]]; do
             MODEL_ARG="$2"
             shift 2
             ;;
+        --workflow)
+            [[ -z "${2:-}" ]] && { echo "Error: --workflow requires a value"; exit 1; }
+            WORKFLOW_ARG="$2"
+            shift 2
+            ;;
         --run-tag)
             [[ -z "${2:-}" ]] && { echo "Error: --run-tag requires a value"; exit 1; }
             RUN_TAG="$2"
@@ -171,6 +179,22 @@ while [[ $# -gt 0 ]]; do
 done
 
 MODEL="$(resolve_model "$MODEL_ARG")"
+case "$WORKFLOW_ARG" in
+    exploit_workflow|exploit)
+        WORKFLOWS=("exploit_workflow")
+        ;;
+    patch_workflow|patch)
+        WORKFLOWS=("patch_workflow")
+        ;;
+    both)
+        WORKFLOWS=("exploit_workflow" "patch_workflow")
+        ;;
+    *)
+        echo "Error: invalid --workflow value '$WORKFLOW_ARG'" >&2
+        echo "Allowed: exploit_workflow, patch_workflow, both" >&2
+        exit 1
+        ;;
+esac
 
 # Script
 

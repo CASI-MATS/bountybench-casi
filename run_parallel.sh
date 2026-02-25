@@ -42,6 +42,7 @@ print_help() {
     echo "  qwen3-next   -> openrouter/qwen/qwen3-coder-next"
     echo "  minimax      -> openrouter/minimax/minimax-m2.5"
     echo "  deepseek     -> openrouter/deepseek/deepseek-v3.2"
+    echo "  gemini3-flash -> openrouter/google/gemini-3-flash-preview"
     echo "  kimi         -> openrouter/moonshotai/kimi-k2-thinking"
     echo ""
     echo "Examples:"
@@ -118,6 +119,9 @@ resolve_model() {
             ;;
         "kimi"|"kimi-k2")
             echo "openrouter/moonshotai/kimi-k2-thinking"
+            ;;
+        "gemini3-flash")
+            echo "openrouter/google/gemini-3-flash-preview"
             ;;
         *)
             # If user passed a full model path, use it directly.

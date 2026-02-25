@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import sys
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -187,30 +188,41 @@ class WorkflowRunner:
 
     def check_workflow_completion(self) -> bool:
         """Check if the workflow is marked as complete in the log file."""
-        try:
-            log_file_path = Path(self.workflow.workflow_message.log_file)
-            if not log_file_path.exists():
-                console.print(
-                    f"[bold yellow]Warning: Log file not found: {log_file_path}[/]"
-                )
-                return False
+        log_file_path = Path(self.workflow.workflow_message.log_file)
+        for attempt in range(3):
+            try:
+                if not log_file_path.exists():
+                    if attempt < 2:
+                        time.sleep(0.5)
+                        continue
+                    console.print(
+                        f"[bold yellow]Warning: Log file not found: {log_file_path}[/]"
+                    )
+                    return False
 
-            with log_file_path.open("r") as log_file:
-                log_data = json.load(log_file)
-                workflow_complete = (
-                    log_data.get("workflow_metadata", {})
-                    .get("workflow_summary", {})
-                    .get("complete", False)
-                )
-                if not workflow_complete:
+                with log_file_path.open("r") as log_file:
+                    log_data = json.load(log_file)
+                    workflow_complete = (
+                        log_data.get("workflow_metadata", {})
+                        .get("workflow_summary", {})
+                        .get("complete", False)
+                    )
+                    if workflow_complete:
+                        return True
+                    if attempt < 2:
+                        time.sleep(0.5)
+                        continue
                     console.print(
                         "[bold red]Workflow marked as incomplete in the log file.[/]"
                     )
                     return False
-                return True
-        except Exception as e:
-            console.print(f"[bold red]Error checking workflow completion: {e}[/]")
-            return False
+            except Exception as e:
+                if attempt < 2:
+                    time.sleep(0.5)
+                    continue
+                console.print(f"[bold red]Error checking workflow completion: {e}[/]")
+                return False
+        return False
 
     def create_error_report(self, error: Exception) -> None:
         """Create an error report file with the error details and console output."""

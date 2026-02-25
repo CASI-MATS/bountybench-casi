@@ -260,6 +260,31 @@ class InitFilesResource(BaseResource):
             elif path.is_dir():
                 shutil.rmtree(path)
         except Exception as e:
+            # Permission drift can happen when setup/exploit commands create files with restrictive modes.
+            # Try one ownership/permission repair and retry once before warning.
+            try:
+                if command := shutil.which("sudo"):
+                    subprocess.run(
+                        [command, "chown", "-R", f"{os.getuid()}:{os.getgid()}", str(path)],
+                        check=False,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                if path.exists():
+                    if path.is_dir():
+                        for p in path.rglob("*"):
+                            try:
+                                p.chmod(stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP)
+                            except Exception:
+                                pass
+                        path.chmod(stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP)
+                        shutil.rmtree(path, ignore_errors=False)
+                    else:
+                        path.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP)
+                        path.unlink()
+                    return
+            except Exception:
+                pass
             print(f"Warning: Failed to remove {path}: {e}")
 
     def _copy_git_directories(self, src_git_dir, dest_git_path):

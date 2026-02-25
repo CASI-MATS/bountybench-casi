@@ -34,9 +34,10 @@ MODEL_ARG=""
 WORKFLOW_ARG="both"
 RUN_TAG=""
 CLEANUP_CONTAINERS=1
+MAX_INFRA_RETRIES=2
 
 print_help() {
-    echo "Usage: $0 [--model <alias|full_model>] [--workflow <exploit_workflow|patch_workflow|both>] [--run-tag <tag>] [--no-container-cleanup]"
+    echo "Usage: $0 [--model <alias|full_model>] [--workflow <exploit_workflow|patch_workflow|both>] [--run-tag <tag>] [--no-container-cleanup] [--infra-retries <n>]"
     echo ""
     echo "Model aliases:"
     echo "  mistral      -> openrouter/mistralai/mistral-small-3.2-24b-instruct"
@@ -53,6 +54,7 @@ print_help() {
     echo "  ./run_parallel.sh --model openrouter/qwen/qwen3-coder-flash --run-tag test_qwen3"
     echo "  ./run_parallel.sh --workflow exploit_workflow"
     echo "  ./run_parallel.sh --workflow patch_workflow --model qwen3"
+    echo "  ./run_parallel.sh --infra-retries 3"
 }
 
 capture_baseline_containers() {
@@ -161,6 +163,11 @@ while [[ $# -gt 0 ]]; do
             CLEANUP_CONTAINERS=0
             shift
             ;;
+        --infra-retries)
+            [[ -z "${2:-}" ]] && { echo "Error: --infra-retries requires a value"; exit 1; }
+            MAX_INFRA_RETRIES="$2"
+            shift 2
+            ;;
         --help|-h)
             print_help
             exit 0
@@ -180,6 +187,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 MODEL="$(resolve_model "$MODEL_ARG")"
+if ! [[ "$MAX_INFRA_RETRIES" =~ ^[0-9]+$ ]]; then
+    echo "Error: --infra-retries must be a non-negative integer" >&2
+    exit 1
+fi
 case "$WORKFLOW_ARG" in
     exploit_workflow|exploit)
         WORKFLOWS=("exploit_workflow")
@@ -295,32 +306,54 @@ run_single_task() {
     local task="$2"
     local run_index="$3"
     local log_file="${LOG_DIR}/${task}/${task}_${workflow}_${run_index}.log"
+    local attempt=0
+    local exit_code=0
     mkdir -p "${LOG_DIR}/${task}"
-    echo "[$(date +%Y-%m-%d\ %H:%M:%S)] Running ${task} with ${workflow} for run ${run_index} -> $log_file"
 
-    set +e
-    "${SCRIPT_DIRECTORY}/venv/bin/python" -m workflows.runner \
-        --workflow-type "$workflow" \
-        --task_dir "bountytasks/${task}" \
-        --bounty_number "$BOUNTY_NUMBER" \
-        --model "$MODEL" \
-        --phase_iterations "$PHASE_ITERATIONS" \
-        --logging_level INFO \
-        $USE_HELM \
-        > "$log_file" 2>&1
-    exit_code=$?
-    set -e
-    echo "[$(date -Iseconds)] Finished $workflow $task run $run_index (exit: $exit_code)"
-    if [[ $exit_code -ne 0 ]]; then
-        echo "  >>> Error output from $log_file (last 25 lines):"
-        tail -25 "$log_file" | sed 's/^/  | /'
-        echo "  >>> (full log: $log_file)"
-    fi
+    while true; do
+        local attempt_log="$log_file"
+        if [[ "$attempt" -gt 0 ]]; then
+            attempt_log="${log_file%.log}_retry${attempt}.log"
+        fi
+        echo "[$(date +%Y-%m-%d\ %H:%M:%S)] Running ${task} with ${workflow} for run ${run_index} (attempt $((attempt + 1))) -> $attempt_log"
+
+        set +e
+        "${SCRIPT_DIRECTORY}/venv/bin/python" -m workflows.runner \
+            --workflow-type "$workflow" \
+            --task_dir "bountytasks/${task}" \
+            --bounty_number "$BOUNTY_NUMBER" \
+            --model "$MODEL" \
+            --phase_iterations "$PHASE_ITERATIONS" \
+            --logging_level INFO \
+            $USE_HELM \
+            > "$attempt_log" 2>&1
+        exit_code=$?
+        set -e
+
+        if [[ $exit_code -eq 0 ]]; then
+            echo "[$(date -Iseconds)] Finished $workflow $task run $run_index (exit: 0)"
+            break
+        fi
+
+        echo "[$(date -Iseconds)] Finished $workflow $task run $run_index (exit: $exit_code)"
+        echo "  >>> Error output from $attempt_log (last 25 lines):"
+        tail -25 "$attempt_log" | sed 's/^/  | /'
+        echo "  >>> (full log: $attempt_log)"
+
+        if [[ "$attempt" -lt "$MAX_INFRA_RETRIES" ]] && is_infra_failure_log "$attempt_log"; then
+            echo "  >>> Detected infra/setup failure. Healing task state and retrying..."
+            sanitize_task_repo "$task"
+            sleep $((2 + attempt))
+            attempt=$((attempt + 1))
+            continue
+        fi
+        break
+    done
     return 0
 }
 
-export -f run_single_task
-export SCRIPT_DIRECTORY RUNS_PER_TASK PHASE_ITERATIONS BOUNTY_NUMBER MODEL PARALLEL_JOBS LOG_DIR
+export -f run_single_task sanitize_task_repo is_infra_failure_log
+export SCRIPT_DIRECTORY RUNS_PER_TASK PHASE_ITERATIONS BOUNTY_NUMBER MODEL PARALLEL_JOBS LOG_DIR MAX_INFRA_RETRIES
 
 # Dedicated-worker mode: one worker per task.
 # Each task has one git repo and Docker setup; two workers for one task would conflict.
@@ -353,11 +386,17 @@ echo "  Tasks: ${BBENCH_TASKS[*]}"
 echo "  Workflows: ${WORKFLOWS[*]}"
 echo "  Parallel jobs: $PARALLEL_JOBS (one dedicated worker per task)"
 echo "  Auto container cleanup: $CLEANUP_CONTAINERS"
+echo "  Infra retries per run: $MAX_INFRA_RETRIES"
 echo "  Run tag: $RUN_TAG"
 echo "  Log dir: $LOG_DIR"
 echo "=============================================="
 
 preflight_repo_sanitize
+
+is_infra_failure_log() {
+    local log_file="$1"
+    rg -q "unable to write new index file|returned non-zero exit status 128|Failed to initialize resource 'init_files'|Error in phase setup|Permission denied|Workflow marked as incomplete in the log file|Docker API error|Failed to pull the latest image|ModuleNotFoundError: No module named" "$log_file"
+}
 
 run_all_for_task() {
     local task="$1"

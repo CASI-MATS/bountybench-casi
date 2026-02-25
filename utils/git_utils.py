@@ -224,6 +224,39 @@ def _repair_repo_ownership(repo_path: PathLike) -> bool:
     return all_ok
 
 
+def _hard_recover_repo_state(directory: Path, target: str, clean: bool) -> None:
+    """Last-resort recovery for stubborn checkout/index failures."""
+    _repair_repo_ownership(directory)
+    _clear_git_locks(directory)
+
+    actual_git_dir = _get_actual_git_dir(directory)
+    if actual_git_dir:
+        (actual_git_dir / "index").unlink(missing_ok=True)
+
+    # Try non-sudo first; fallback to sudo for corrupted ownership edge cases.
+    try:
+        _run_git_command(directory, ["reset", "--hard", target], capture_output=True)
+    except subprocess.CalledProcessError:
+        _run_git_command(
+            directory, ["reset", "--hard", target], capture_output=True, use_sudo=True
+        )
+
+    if clean:
+        try:
+            _run_git_command(directory, ["clean", "-fdx"], capture_output=True)
+        except subprocess.CalledProcessError:
+            _run_git_command(
+                directory, ["clean", "-fdx"], capture_output=True, use_sudo=True
+            )
+
+    # Ensure resulting files are writable by current user for following runs.
+    _repair_repo_ownership(directory)
+    _clear_git_locks(directory)
+    actual_git_dir = _get_actual_git_dir(directory)
+    if actual_git_dir:
+        (actual_git_dir / "index").unlink(missing_ok=True)
+
+
 def git_checkout(
     directory_path: PathLike, target: str, force: bool = False, clean: bool = True
 ) -> None:
@@ -249,7 +282,7 @@ def git_checkout(
         # Clean first if requested (no sudo: repo should be owned by current user to avoid index write failures)
         if clean:
             try:
-                _run_git_command(directory, ["clean", "-fdx"])
+                _run_git_command(directory, ["clean", "-fdx"], capture_output=True)
             except subprocess.CalledProcessError:
                 logger.warning(
                     f"Initial git clean failed in {directory}; attempting one ownership repair and retry",
@@ -258,14 +291,14 @@ def git_checkout(
                 if not _repair_repo_ownership(directory):
                     raise
                 _clear_git_locks(directory)
-                _run_git_command(directory, ["clean", "-fdx"])
+                _run_git_command(directory, ["clean", "-fdx"], capture_output=True)
         _clear_git_locks(directory)
         # Remove index so checkout can write a new one (avoids "unable to write new index file" after clean or stale state)
         actual_git_dir = _get_actual_git_dir(directory)
         if actual_git_dir:
             (actual_git_dir / "index").unlink(missing_ok=True)
         try:
-            _run_git_command(directory, cmd)
+            _run_git_command(directory, cmd, capture_output=True)
         except subprocess.CalledProcessError:
             logger.warning(
                 f"Initial git checkout failed in {directory}; attempting one ownership repair and retry",
@@ -277,7 +310,15 @@ def git_checkout(
             actual_git_dir = _get_actual_git_dir(directory)
             if actual_git_dir:
                 (actual_git_dir / "index").unlink(missing_ok=True)
-            _run_git_command(directory, cmd)
+            try:
+                _run_git_command(directory, cmd, capture_output=True)
+            except subprocess.CalledProcessError:
+                logger.warning(
+                    f"Second git checkout failed in {directory}; performing hard repo recovery",
+                    stacklevel=2,
+                )
+                _hard_recover_repo_state(directory, target, clean)
+                _run_git_command(directory, cmd, capture_output=True)
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to checkout {target}: {e.stderr}")
         raise

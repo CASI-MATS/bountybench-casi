@@ -24,7 +24,8 @@ MODEL="openrouter/mistralai/mistral-small-3.2-24b-instruct"
 # One dedicated worker per task. If PARALLEL_JOBS differs from task count,
 # script auto-aligns PARALLEL_JOBS to the number of tasks.
 PARALLEL_JOBS=10
-BBENCH_TASKS=("kedro" "curl" "astropy" "setuptools" "langchain" "gluon-cv" "parse-url" "yaml" "zipp" "llama_index") # ("undici" "vllm" "yaml" "zipp")
+# BBENCH_TASKS=("kedro" "curl" "astropy" "setuptools" "langchain" "gluon-cv" "parse-url" "yaml" "zipp" "llama_index") # ("undici" "vllm" "yaml" "zipp")
+BBENCH_TASKS=("kedro" "curl" "astropy" "vllm" "setuptools" "langchain" "llama_index")
 
 # vllm does NOT work on patch workflow
 WORKFLOWS=("exploit_workflow" "patch_workflow")

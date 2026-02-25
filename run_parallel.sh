@@ -352,7 +352,7 @@ run_single_task() {
     return 0
 }
 
-export -f run_single_task sanitize_task_repo is_infra_failure_log
+export -f run_single_task sanitize_task_repo
 export SCRIPT_DIRECTORY RUNS_PER_TASK PHASE_ITERATIONS BOUNTY_NUMBER MODEL PARALLEL_JOBS LOG_DIR MAX_INFRA_RETRIES
 
 # Dedicated-worker mode: one worker per task.

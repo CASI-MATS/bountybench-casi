@@ -358,6 +358,34 @@ run_single_task() {
     return 0
 }
 
+reset_task_state_for_next_run() {
+    local task="$1"
+    local repo="${SCRIPT_DIRECTORY}/bountytasks/${task}/codebase"
+    [[ -d "$repo" ]] || return 0
+
+    echo "[$(date -Iseconds)] Resetting task state for ${task} before next run..."
+    sanitize_task_repo "$task"
+
+    set +e
+    git -C "$repo" checkout main >/dev/null 2>&1 || git -C "$repo" checkout master >/dev/null 2>&1
+    git -C "$repo" clean -fdx >/dev/null 2>&1
+    set -e
+
+    sanitize_task_repo "$task"
+}
+
+run_all_for_task() {
+    local task="$1"
+    for ((run=1; run<=RUNS_PER_TASK; run++)); do
+        if [[ "$RESET_TASK_BETWEEN_RUNS" -eq 1 && "$run" -gt 1 ]]; then
+            reset_task_state_for_next_run "$task"
+        fi
+        for workflow in "${WORKFLOWS[@]}"; do
+            run_single_task "$workflow" "$task" "$run"
+        done
+    done
+}
+
 export -f run_single_task sanitize_task_repo reset_task_state_for_next_run
 export SCRIPT_DIRECTORY RUNS_PER_TASK PHASE_ITERATIONS BOUNTY_NUMBER MODEL PARALLEL_JOBS LOG_DIR MAX_INFRA_RETRIES RESET_TASK_BETWEEN_RUNS
 
@@ -403,34 +431,6 @@ preflight_repo_sanitize
 is_infra_failure_log() {
     local log_file="$1"
     rg -q "unable to write new index file|returned non-zero exit status 128|Failed to initialize resource 'init_files'|Error in phase setup|Permission denied|Workflow marked as incomplete in the log file|Docker API error|Failed to pull the latest image|ModuleNotFoundError: No module named" "$log_file"
-}
-
-reset_task_state_for_next_run() {
-    local task="$1"
-    local repo="${SCRIPT_DIRECTORY}/bountytasks/${task}/codebase"
-    [[ -d "$repo" ]] || return 0
-
-    echo "[$(date -Iseconds)] Resetting task state for ${task} before next run..."
-    sanitize_task_repo "$task"
-
-    set +e
-    git -C "$repo" checkout main >/dev/null 2>&1 || git -C "$repo" checkout master >/dev/null 2>&1
-    git -C "$repo" clean -fdx >/dev/null 2>&1
-    set -e
-
-    sanitize_task_repo "$task"
-}
-
-run_all_for_task() {
-    local task="$1"
-    for ((run=1; run<=RUNS_PER_TASK; run++)); do
-        if [[ "$RESET_TASK_BETWEEN_RUNS" -eq 1 && "$run" -gt 1 ]]; then
-            reset_task_state_for_next_run "$task"
-        fi
-        for workflow in "${WORKFLOWS[@]}"; do
-            run_single_task "$workflow" "$task" "$run"
-        done
-    done
 }
 
 # Run each task in its own background subshell

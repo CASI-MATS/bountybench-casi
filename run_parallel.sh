@@ -10,7 +10,7 @@ BASELINE_KALI_CONTAINERS=()
 
 # Configs
 
-RUNS_PER_TASK=7
+RUNS_PER_TASK=100
 PHASE_ITERATIONS=100
 BOUNTY_NUMBER=0
 
@@ -35,9 +35,10 @@ WORKFLOW_ARG="both"
 RUN_TAG=""
 CLEANUP_CONTAINERS=1
 MAX_INFRA_RETRIES=2
+RESET_TASK_BETWEEN_RUNS=0
 
 print_help() {
-    echo "Usage: $0 [--model <alias|full_model>] [--workflow <exploit_workflow|patch_workflow|both>] [--run-tag <tag>] [--no-container-cleanup] [--infra-retries <n>]"
+    echo "Usage: $0 [--model <alias|full_model>] [--workflow <exploit_workflow|patch_workflow|both>] [--run-tag <tag>] [--no-container-cleanup] [--infra-retries <n>] [--reset-tasks]"
     echo ""
     echo "Model aliases:"
     echo "  mistral      -> openrouter/mistralai/mistral-small-3.2-24b-instruct"
@@ -55,6 +56,7 @@ print_help() {
     echo "  ./run_parallel.sh --workflow exploit_workflow"
     echo "  ./run_parallel.sh --workflow patch_workflow --model qwen3"
     echo "  ./run_parallel.sh --infra-retries 3"
+    echo "  ./run_parallel.sh --reset-tasks"
 }
 
 capture_baseline_containers() {
@@ -167,6 +169,10 @@ while [[ $# -gt 0 ]]; do
             [[ -z "${2:-}" ]] && { echo "Error: --infra-retries requires a value"; exit 1; }
             MAX_INFRA_RETRIES="$2"
             shift 2
+            ;;
+        --reset-tasks)
+            RESET_TASK_BETWEEN_RUNS=1
+            shift
             ;;
         --help|-h)
             print_help
@@ -352,8 +358,8 @@ run_single_task() {
     return 0
 }
 
-export -f run_single_task sanitize_task_repo
-export SCRIPT_DIRECTORY RUNS_PER_TASK PHASE_ITERATIONS BOUNTY_NUMBER MODEL PARALLEL_JOBS LOG_DIR MAX_INFRA_RETRIES
+export -f run_single_task sanitize_task_repo reset_task_state_for_next_run
+export SCRIPT_DIRECTORY RUNS_PER_TASK PHASE_ITERATIONS BOUNTY_NUMBER MODEL PARALLEL_JOBS LOG_DIR MAX_INFRA_RETRIES RESET_TASK_BETWEEN_RUNS
 
 # Dedicated-worker mode: one worker per task.
 # Each task has one git repo and Docker setup; two workers for one task would conflict.
@@ -387,6 +393,7 @@ echo "  Workflows: ${WORKFLOWS[*]}"
 echo "  Parallel jobs: $PARALLEL_JOBS (one dedicated worker per task)"
 echo "  Auto container cleanup: $CLEANUP_CONTAINERS"
 echo "  Infra retries per run: $MAX_INFRA_RETRIES"
+echo "  Reset task between runs: $RESET_TASK_BETWEEN_RUNS"
 echo "  Run tag: $RUN_TAG"
 echo "  Log dir: $LOG_DIR"
 echo "=============================================="
@@ -398,9 +405,28 @@ is_infra_failure_log() {
     rg -q "unable to write new index file|returned non-zero exit status 128|Failed to initialize resource 'init_files'|Error in phase setup|Permission denied|Workflow marked as incomplete in the log file|Docker API error|Failed to pull the latest image|ModuleNotFoundError: No module named" "$log_file"
 }
 
+reset_task_state_for_next_run() {
+    local task="$1"
+    local repo="${SCRIPT_DIRECTORY}/bountytasks/${task}/codebase"
+    [[ -d "$repo" ]] || return 0
+
+    echo "[$(date -Iseconds)] Resetting task state for ${task} before next run..."
+    sanitize_task_repo "$task"
+
+    set +e
+    git -C "$repo" checkout main >/dev/null 2>&1 || git -C "$repo" checkout master >/dev/null 2>&1
+    git -C "$repo" clean -fdx >/dev/null 2>&1
+    set -e
+
+    sanitize_task_repo "$task"
+}
+
 run_all_for_task() {
     local task="$1"
     for ((run=1; run<=RUNS_PER_TASK; run++)); do
+        if [[ "$RESET_TASK_BETWEEN_RUNS" -eq 1 && "$run" -gt 1 ]]; then
+            reset_task_state_for_next_run "$task"
+        fi
         for workflow in "${WORKFLOWS[@]}"; do
             run_single_task "$workflow" "$task" "$run"
         done
